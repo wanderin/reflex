@@ -1,0 +1,9 @@
+# Use system Rust instead of Solana-bundled toolchain
+# This helps with edition2024 crate compatibility
+
+[build]
+rustc = "rustc"
+
+[env]
+# Workaround for edition2024 crates
+CARGO_REGISTRIES_CRATES_IO_PROTOCOL = "sparse"

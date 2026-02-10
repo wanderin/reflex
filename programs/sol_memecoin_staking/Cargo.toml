@@ -1,0 +1,26 @@
+[package]
+name = "sol-memecoin-staking"
+version = "0.1.0"
+description = "Multi-pool SPL/Token-2022 staking with SOL rewards"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "sol_memecoin_staking"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "0.30.1" }
+anchor-spl = { version = "0.30.1", features = ["token", "token_2022"] }
+spl-token-2022 = "3.0"
+solana-security-txt = "1.1.2"
+
+[lints]
+workspace = true
