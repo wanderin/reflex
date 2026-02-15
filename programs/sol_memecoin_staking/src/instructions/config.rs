@@ -192,7 +192,7 @@ pub fn handler_update_authority(
 
 #[derive(Accounts)]
 pub struct SetPoolCreator<'info> {
-    /// The current authority - only authority can set pool_creator
+    /// The current authority - must match config.authority AND be upgrade authority
     #[account(
         constraint = authority.key() == config.authority @ StakingError::Unauthorized,
     )]
@@ -205,10 +205,25 @@ pub struct SetPoolCreator<'info> {
         bump = config.bump,
     )]
     pub config: Account<'info, ProgramConfig>,
+
+    /// The program's executable account
+    /// CHECK: Validated to be our program
+    #[account(
+        constraint = program.key() == ID @ StakingError::Unauthorized,
+        executable,
+    )]
+    pub program: UncheckedAccount<'info>,
+
+    /// The program data account containing upgrade authority
+    /// CHECK: Validated by seed derivation from program
+    #[account(
+        constraint = program_data.key() == get_program_data_address(&program.key()) @ StakingError::Unauthorized,
+    )]
+    pub program_data: UncheckedAccount<'info>,
 }
 
 /// Set or update the pool_creator role.
-/// Only the global authority can call this.
+/// Only the global authority can call this (verified as upgrade authority).
 /// The pool_creator can only create pools - no other admin powers.
 ///
 /// # Arguments
@@ -217,6 +232,27 @@ pub fn handler_set_pool_creator(
     ctx: Context<SetPoolCreator>,
     new_pool_creator: Pubkey,
 ) -> Result<()> {
+    // Belt-and-suspenders: verify signer is also the upgrade authority
+    let program_data_info = ctx.accounts.program_data.to_account_info();
+    let program_data = program_data_info.try_borrow_data()?;
+
+    require!(program_data.len() >= 45, StakingError::Unauthorized);
+
+    let discriminant = u32::from_le_bytes([
+        program_data[0], program_data[1], program_data[2], program_data[3]
+    ]);
+    require!(discriminant == 3, StakingError::Unauthorized);
+
+    require!(program_data[12] == 1, StakingError::NotUpgradeAuthority);
+
+    let upgrade_authority = Pubkey::try_from(&program_data[13..45])
+        .map_err(|_| StakingError::Unauthorized)?;
+
+    require!(
+        ctx.accounts.authority.key() == upgrade_authority,
+        StakingError::NotUpgradeAuthority
+    );
+
     let config = &mut ctx.accounts.config;
     let clock = Clock::get()?;
 
