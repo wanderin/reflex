@@ -83,3 +83,12 @@ pub struct CreatorWalletRotated {
     pub rotated_by: Pubkey,
     pub timestamp: i64,
 }
+
+/// Emitted when the pool creator role is updated
+#[event]
+pub struct PoolCreatorUpdated {
+    pub config: Pubkey,
+    pub old_pool_creator: Pubkey,
+    pub new_pool_creator: Pubkey,
+    pub timestamp: i64,
+}

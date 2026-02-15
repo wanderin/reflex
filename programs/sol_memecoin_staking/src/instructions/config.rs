@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::state::ProgramConfig;
 use crate::errors::StakingError;
-use crate::events::{ConfigInitialized, AuthorityUpdated};
+use crate::events::{ConfigInitialized, AuthorityUpdated, PoolCreatorUpdated};
 use crate::ID;
 
 #[derive(Accounts)]
@@ -93,7 +93,7 @@ pub fn handler_initialize_config(ctx: Context<InitializeConfig>) -> Result<()> {
 
     config.authority = ctx.accounts.authority.key();
     config.bump = ctx.bumps.config;
-    config.reserved = [0; 4];
+    config.pool_creator = Pubkey::default();
 
     emit!(ConfigInitialized {
         config: config.key(),
@@ -187,5 +187,49 @@ pub fn handler_update_authority(
     });
 
     msg!("Authority updated from {} to {} (verified as upgrade authority)", old_authority, new_authority);
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct SetPoolCreator<'info> {
+    /// The current authority - only authority can set pool_creator
+    #[account(
+        constraint = authority.key() == config.authority @ StakingError::Unauthorized,
+    )]
+    pub authority: Signer<'info>,
+
+    /// The config PDA
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, ProgramConfig>,
+}
+
+/// Set or update the pool_creator role.
+/// Only the global authority can call this.
+/// The pool_creator can only create pools - no other admin powers.
+///
+/// # Arguments
+/// * `new_pool_creator` - The new pool creator pubkey (Pubkey::default() to disable)
+pub fn handler_set_pool_creator(
+    ctx: Context<SetPoolCreator>,
+    new_pool_creator: Pubkey,
+) -> Result<()> {
+    let config = &mut ctx.accounts.config;
+    let clock = Clock::get()?;
+
+    let old_pool_creator = config.pool_creator;
+    config.pool_creator = new_pool_creator;
+
+    emit!(PoolCreatorUpdated {
+        config: config.key(),
+        old_pool_creator,
+        new_pool_creator,
+        timestamp: clock.unix_timestamp,
+    });
+
+    msg!("Pool creator updated from {} to {}", old_pool_creator, new_pool_creator);
     Ok(())
 }

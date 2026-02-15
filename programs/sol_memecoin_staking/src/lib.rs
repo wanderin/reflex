@@ -83,14 +83,14 @@ impl StakingTier {
 /// Default tier multipliers in basis points (10000 = 1.0x)
 /// Linear scaling: shares = amount * multiplier / 10000
 /// - Proportional rewards (no Sybil advantage from splitting)
-/// - Tier bonuses reward longer lock commitments (up to 1.5x for permanent)
+/// - Tier bonuses reward longer lock commitments (up to 2.0x for permanent)
 pub const DEFAULT_TIER_MULTIPLIERS: [u64; 6] = [
     10_000, // Flexible: 1.00x
-    10_500, // 24 hours: 1.05x
-    11_000, // 72 hours: 1.10x
-    11_800, // 1 week: 1.18x
-    13_000, // 1 month: 1.30x
-    15_000, // Permanent: 1.50x
+    11_500, // 24 hours: 1.15x
+    12_500, // 72 hours: 1.25x
+    14_000, // 1 week: 1.40x
+    17_000, // 1 month: 1.70x
+    20_000, // Permanent: 2.00x
 ];
 
 #[program]
@@ -111,8 +111,18 @@ pub mod sol_memecoin_staking {
         instructions::config::handler_update_authority(ctx, new_authority)
     }
 
+    /// Set or update the pool_creator role.
+    /// Only the global authority can call this.
+    /// The pool_creator can only create pools - no other admin powers.
+    ///
+    /// # Arguments
+    /// * `new_pool_creator` - The new pool creator pubkey (Pubkey::default() to disable)
+    pub fn set_pool_creator(ctx: Context<SetPoolCreator>, new_pool_creator: Pubkey) -> Result<()> {
+        instructions::config::handler_set_pool_creator(ctx, new_pool_creator)
+    }
+
     /// Initialize a new staking pool for a specific token mint.
-    /// Only the program authority can create pools.
+    /// Only the program authority or pool_creator can create pools.
     /// Creates the pool PDA, token vault, and SOL vault.
     /// 
     /// # Arguments

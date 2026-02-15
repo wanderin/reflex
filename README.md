@@ -21,11 +21,11 @@ Linear scaling — no advantage from splitting stakes across multiple accounts.
 | Tier | Lock Duration | Multiplier |
 |------|---------------|------------|
 | Flexible | 1 minute | 1.00x |
-| 24 Hours | 24h | 1.05x |
-| 72 Hours | 72h | 1.10x |
-| 1 Week | 7 days | 1.18x |
-| 1 Month | 30 days | 1.30x |
-| Permanent | Forever | 1.50x |
+| 24 Hours | 24h | 1.15x |
+| 72 Hours | 72h | 1.25x |
+| 1 Week | 7 days | 1.40x |
+| 1 Month | 30 days | 1.70x |
+| Permanent | Forever | 2.00x |
 
 Permanent stakes cannot be unstaked. Rewards can still be claimed.
 

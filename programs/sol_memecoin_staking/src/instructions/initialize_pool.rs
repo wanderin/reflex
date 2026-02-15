@@ -19,15 +19,18 @@ const MINT_SIZE: usize = 82;
 #[derive(Accounts)]
 #[instruction(creator_wallet: Pubkey)]
 pub struct InitializePool<'info> {
-    /// The authority who can create pools (must match config.authority)
+    /// The authority or pool_creator who can create pools
     #[account(mut)]
     pub authority: Signer<'info>,
 
-    /// Program config - verifies authority
+    /// Program config - verifies authority or pool_creator
     #[account(
         seeds = [b"config"],
         bump = config.bump,
-        constraint = config.authority == authority.key() @ StakingError::Unauthorized,
+        constraint = (
+            config.authority == authority.key() ||
+            (config.pool_creator != Pubkey::default() && config.pool_creator == authority.key())
+        ) @ StakingError::Unauthorized,
     )]
     pub config: Box<Account<'info, ProgramConfig>>,
 

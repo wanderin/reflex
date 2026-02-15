@@ -12,13 +12,13 @@ pub struct ProgramConfig {
     /// PDA bump
     pub bump: u8,
     
-    /// Reserved for future use
-    pub reserved: [u64; 4],
+    /// Dedicated wallet that can only create pools (Pubkey::default() = not set)
+    pub pool_creator: Pubkey,
 }
 
 impl ProgramConfig {
-    /// Space: 8 (discriminator) + 32 (authority) + 1 (bump) + 32 (reserved)
-    pub const LEN: usize = 8 + 32 + 1 + (4 * 8);
+    /// Space: 8 (discriminator) + 32 (authority) + 1 (bump) + 32 (pool_creator)
+    pub const LEN: usize = 8 + 32 + 1 + 32;
 }
 
 /// Pool state account - one per token mint
@@ -98,7 +98,7 @@ impl Pool {
     /// Formula: shares = amount * multiplier / 10000
     /// 
     /// With linear scaling, there is no incentive to split stakes (no Sybil advantage).
-    /// Tier multipliers reward longer lock periods (e.g., 15000 = 1.5x for permanent tier).
+    /// Tier multipliers reward longer lock periods (e.g., 20000 = 2.0x for permanent tier).
     /// Returns MathOverflow on overflow instead of silently returning 0.
     pub fn calculate_shares(&self, amount: u64, tier: &StakingTier) -> Result<u128> {
         let multiplier = self.get_multiplier(tier) as u128;
