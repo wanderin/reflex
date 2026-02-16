@@ -1,4 +1,5 @@
 [toolchain]
+solana_version = "3.0.7"
 
 [features]
 resolution = true
