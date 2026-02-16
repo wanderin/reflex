@@ -57,8 +57,8 @@ We offer bug bounties for valid security reports. Severity and rewards are deter
 
 ### Operational Security
 
-- Admin keys should be stored in hardware wallets or multisigs
-- Use Squads or similar for production admin operations
+- **Program upgrade authority is managed via Squads multisig**
+- Admin operations require multisig approval
 - Regular monitoring of pool states and balances
 
 ## Audits
@@ -70,7 +70,7 @@ We offer bug bounties for valid security reports. Severity and rewards are deter
 
 ## Known Limitations
 
-1. **Centralized Authority:** Single admin controls pool operations. Consider multisig for production.
+1. **Authority Model:** Program upgrade authority is managed via Squads multisig for production security.
 2. **No Slashing:** Permanent stakes cannot be recovered even in emergencies.
 3. **Reward Timing:** Rewards are distributed when `fund_rewards` is called, not continuously.
 

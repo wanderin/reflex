@@ -62,6 +62,7 @@ Uses the MasterChef accumulator pattern:
 ## Security
 
 - **Trustless design** — no admin pause or kill-switch
+- **Squads multisig** — program upgrade authority is managed via Squads multisig
 - Authority is verified against the on-chain upgrade authority at initialization and rotation
 - 60-second minimum stake age on claims (anti-sandwich)
 - Exact reward transfers (no vault over-drain)
