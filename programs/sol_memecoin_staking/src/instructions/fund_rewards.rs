@@ -72,49 +72,32 @@ pub fn handler_fund_rewards(ctx: Context<FundRewards>, amount: u64) -> Result<()
         .checked_add(pool.unallocated_rewards as u128)
         .ok_or(StakingError::MathOverflow)?;
 
-    // Track how much was actually distributed to stakers
-    let mut distributed_amount: u64 = 0;
+    // total_shares > 0 is guaranteed by the require! above.
+    // Update acc_sol_per_share: acc += (total_to_distribute * SCALE) / total_shares
+    let amount_scaled = total_to_distribute
+        .checked_mul(SCALE)
+        .ok_or(StakingError::MathOverflow)?;
+    
+    let increase = amount_scaled
+        .checked_div(pool.total_shares)
+        .ok_or(StakingError::MathOverflow)?;
+    
+    pool.acc_sol_per_share = pool.acc_sol_per_share
+        .checked_add(increase)
+        .ok_or(StakingError::MathOverflow)?;
 
-    // Update acc_sol_per_share if there are shares
-    if pool.total_shares > 0 {
-        // acc_sol_per_share += (total_to_distribute * SCALE) / total_shares
-        let amount_scaled = total_to_distribute
-            .checked_mul(SCALE)
-            .ok_or(StakingError::MathOverflow)?;
-        
-        let increase = amount_scaled
-            .checked_div(pool.total_shares)
-            .ok_or(StakingError::MathOverflow)?;
-        
-        pool.acc_sol_per_share = pool.acc_sol_per_share
-            .checked_add(increase)
-            .ok_or(StakingError::MathOverflow)?;
+    let distributed_amount: u64 = total_to_distribute
+        .try_into()
+        .map_err(|_| StakingError::MathOverflow)?;
 
-        distributed_amount = total_to_distribute
-            .try_into()
-            .map_err(|_| StakingError::MathOverflow)?;
-
-        // Clear unallocated rewards since they've now been distributed
-        if pool.unallocated_rewards > 0 {
-            msg!(
-                "Distributing {} previously unallocated lamports along with {} new lamports",
-                pool.unallocated_rewards,
-                amount
-            );
-            pool.unallocated_rewards = 0;
-        }
-    } else {
-        // No stakers - add to unallocated rewards
-        // These will be distributed on the next fund_rewards call when there are stakers
-        pool.unallocated_rewards = pool.unallocated_rewards
-            .checked_add(amount)
-            .ok_or(StakingError::MathOverflow)?;
-        
+    // Clear unallocated rewards since they've now been distributed
+    if pool.unallocated_rewards > 0 {
         msg!(
-            "No stakers yet. {} lamports added to unallocated rewards (total: {})",
-            amount,
-            pool.unallocated_rewards
+            "Distributing {} previously unallocated lamports along with {} new lamports",
+            pool.unallocated_rewards,
+            amount
         );
+        pool.unallocated_rewards = 0;
     }
 
     pool.total_rewards_funded = pool.total_rewards_funded
