@@ -11,6 +11,9 @@ sol_memecoin_staking = "7mSqZcYPUGm99M6sGpNRHjorbB1NPF3ThyTpEjhkKzKF"
 [programs.devnet]
 sol_memecoin_staking = "NJhkFnDmd526wGrPgpRGZUsDidGGJ5pFCDZR6nCgift"
 
+[programs.localnet]
+sol_memecoin_staking = "4y5Q3Gd3R2VZjXgzDrMV6qJHP93rSTs5M3GWaMDqoVBn"
+
 [registry]
 url = "https://api.apr.dev"
 

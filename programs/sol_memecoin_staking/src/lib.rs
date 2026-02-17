@@ -30,7 +30,12 @@ pub use instructions::unstake::*;
 pub use instructions::fund_rewards::*;
 pub use instructions::admin::*;
 
+#[cfg(feature = "mainnet")]
 declare_id!("7mSqZcYPUGm99M6sGpNRHjorbB1NPF3ThyTpEjhkKzKF");
+#[cfg(feature = "devnet")]
+declare_id!("NJhkFnDmd526wGrPgpRGZUsDidGGJ5pFCDZR6nCgift");
+#[cfg(feature = "localnet")]
+declare_id!("4y5Q3Gd3R2VZjXgzDrMV6qJHP93rSTs5M3GWaMDqoVBn");
 
 /// Fixed-point scale for acc_sol_per_share: 1e12
 /// This allows for precise reward calculations without floating point
@@ -59,11 +64,11 @@ impl StakingTier {
     pub fn lock_duration_seconds(&self) -> u64 {
         match self {
             StakingTier::Flexible => 60,               // 1 minute (anti-sandwich)
-            StakingTier::Hours24 => 24 * 60 * 60,      // 86400
-            StakingTier::Hours72 => 72 * 60 * 60,      // 259200
-            StakingTier::Week1 => 7 * 24 * 60 * 60,    // 604800
-            StakingTier::Month1 => 30 * 24 * 60 * 60,  // 2592000
-            StakingTier::Permanent => u64::MAX,        // Never unlocks
+            StakingTier::Hours24 => 24 * 60 * 60,      // 86400 1 day
+            StakingTier::Hours72 => 72 * 60 * 60,      // 259200 3 days
+            StakingTier::Week1 => 7 * 24 * 60 * 60,    // 604800 1 week
+            StakingTier::Month1 => 30 * 24 * 60 * 60,  // 2592000 1 month
+            StakingTier::Permanent => u64::MAX,        // Never unlocks permanent 
         }
     }
 

@@ -29,3 +29,9 @@ npm-debug.log*
 # Private keys (NEVER commit!)
 *-keypair.json
 *.pem
+
+# test-ledger for localnet
+test-ledger/
+
+# Personal files
+GEMINI.md

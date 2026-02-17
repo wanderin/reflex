@@ -9,7 +9,10 @@ crate-type = ["cdylib", "lib"]
 name = "sol_memecoin_staking"
 
 [features]
-default = []
+default = ["localnet"]
+localnet = []
+devnet = []
+mainnet = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
