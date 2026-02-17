@@ -23,7 +23,7 @@ pub enum StakingError {
     #[msg("Stake lot is not active")]
     LotNotActive,
 
-    #[msg("Invalid token program - must be Token-2022")]
+    #[msg("Invalid token program - must be SPL Token or Token-2022")]
     InvalidTokenProgram,
 
     #[msg("Token mint mismatch")]

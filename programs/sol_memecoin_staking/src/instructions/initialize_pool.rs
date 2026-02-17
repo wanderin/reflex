@@ -71,25 +71,29 @@ pub struct InitializePool<'info> {
     )]
     pub sol_vault: UncheckedAccount<'info>,
 
-    /// Token program - must be Token-2022 (pump.fun uses Token-2022)
+    /// Token program - must be SPL Token or Token-2022
     #[account(
-        constraint = token_program.key() == spl_token_2022::ID @ StakingError::InvalidTokenProgram,
+        constraint = (
+            token_program.key() == spl_token_2022::ID ||
+            token_program.key() == anchor_spl::token::ID
+        ) @ StakingError::InvalidTokenProgram,
     )]
     pub token_program: Interface<'info, TokenInterface>,
     
     pub system_program: Program<'info, System>,
 }
 
-/// Check if a Token-2022 mint has any dangerous extensions that would break accounting
-/// Blocks: TransferFeeConfig, InterestBearingConfig, PermanentDelegate, TransferHook, ConfidentialTransferMint
+/// Check if a mint has any dangerous Token-2022 extensions that would break accounting.
+/// For old SPL Token mints (82 bytes, no extensions possible), this is a safe no-op.
+/// For Token-2022 mints, blocks: TransferFeeConfig, InterestBearingConfig,
+/// PermanentDelegate, TransferHook, ConfidentialTransferMint, NonTransferable.
 fn validate_mint_extensions(mint_account_info: &AccountInfo) -> Result<()> {
     let mint_data = mint_account_info.try_borrow_data()?;
     
-    // If the mint data is exactly 82 bytes, it's a base Token-2022 mint with no extensions.
-    // Token-2022 mints with extensions have additional data beyond the base 82 bytes.
-    // This is safe because we already enforce token_program == spl_token_2022::ID.
+    // If the mint data is exactly 82 bytes, it has no extensions.
+    // This covers both old SPL Token mints (always 82 bytes) and base Token-2022
+    // mints without extensions. Both are safe — no dangerous extensions can exist.
     if mint_data.len() == MINT_SIZE {
-        // No extensions present - this is a valid base Token-2022 mint
         return Ok(());
     }
     

@@ -29,7 +29,7 @@ pub struct Pool {
     /// The token mint this pool is for
     pub token_mint: Pubkey,
     
-    /// The token program ID (Token-2022 only)
+    /// The token program ID (SPL Token or Token-2022)
     pub token_program: Pubkey,
     
     /// PDA bump for the pool
