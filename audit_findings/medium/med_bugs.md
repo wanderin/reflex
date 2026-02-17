@@ -1,6 +1,40 @@
-## M-01: The SetPoolCreator in config.rs can be bricked
-The config hosts 3 major functions to the protocol, `handler_set_pool_creator()`, `handler_update_authority()` and `handler_initialize_config()`. 
-The issue stems from the handler_update_authority where the flow is: 
-1. Updating the program's update address to the new wallet (wallet B).
-2. Then call the function to sync the config's authority from the old (wallet A) to the new (wallet B)
-The `handler_set_pool_creator()` needs the wallet address signing to be both config.authority and the upgrade address for the program. If there is any mishap in the time duration from when the program upgrade account is updated and when the `handler_update_authority()` is called like loss of the old account or if it is a multi-sig, it will be rendered bricked and no pools would be able to be lauched because
+## M-01: Administrative Deadlock in `set_pool_creator` during Authority Transition
+
+### Summary
+The `handler_set_pool_creator` instruction contains a logic deadlock that makes it impossible to execute during the transition period between transferring the program's upgrade authority and syncing the on-chain `ProgramConfig`.
+
+### Vulnerability Detail
+The protocol manages authority in two layers: the `ProgramData` (Solana native upgrade authority) and the `ProgramConfig` PDA (internal state). To update the authority, the user must first change the upgrade authority via CLI and then call `update_authority` to sync the state.
+
+However, `handler_set_pool_creator` enforces two conflicting requirements:
+1.  **Account Constraint**: The signer must match `config.authority` (the **Old** authority).
+2.  **Handler Logic**: The signer must match the `upgrade_authority` found in `ProgramData` (the **New** authority).
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/config.rs
+
+pub struct SetPoolCreator<'info> {
+    #[account(
+        constraint = authority.key() == config.authority @ StakingError::Unauthorized, // Must be Wallet A
+    )]
+    pub authority: Signer<'info>,
+    // ...
+}
+
+pub fn handler_set_pool_creator(...) {
+    // ...
+    let upgrade_authority = Pubkey::try_from(&program_data[13..45])?;
+    require!(
+        ctx.accounts.authority.key() == upgrade_authority, // Must be Wallet B
+        StakingError::NotUpgradeAuthority
+    );
+}
+```
+
+During the transition window where Wallet A != Wallet B, no signer can satisfy both conditions.
+
+### Impact
+The `set_pool_creator` function is completely bricked during the transition period. While this can be resolved by completing the `update_authority` sync, it represents a significant flaw in the administrative state machine that prevents legitimate management actions.
+
+### Recommendation
+Update the `SetPoolCreator` struct or handler to allow either the `config.authority` OR the `upgrade_authority` to sign, or remove the dual requirement. Ideally, the `upgrade_authority` should be the ultimate source of truth and should be able to override the `config.authority`.

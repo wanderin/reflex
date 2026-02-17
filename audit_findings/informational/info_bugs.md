@@ -1,21 +1,23 @@
-## I-01 Redundant index impl for StakingTier enum
-The `StakingTier::index(&self)` is not needed as by default rust arranges the values of the enum in order of index. So no need for the index impl, removing it will reduce the rent consumed as solana counts function and account state to know the rent used for a program, this will be a very negligible reduction.
-```rust
-pub enum StakingTier {
-    /// 1 minute minimum lock (prevents sandwich attacks)
-    Flexible, -> 0
-    /// 24 hour lock
-    Hours24, -> 1
-    /// 72 hour lock
-    Hours72, -> 2
-    /// 1 week lock
-    Week1, -> 3
-    /// 1 month lock (30 days)
-    Month1, -> 4
-    /// Permanent lock - cannot unstake ever
-    Permanent, -> 5
-}
-```
+## I-01: Redundant `index` Implementation for `StakingTier`
+
+### Summary
+The manual `index(&self)` implementation for the `StakingTier` enum is redundant as Rust enums with a `#[repr(u8)]` or default discriminants already follow this ordering.
+
+### Detail
+Removing redundant logic reduces the program size and simplifies maintenance. Since the `StakingTier` is already mapped from a `u8` in `StakeLot::get_tier()`, the explicit index function adds no value.
+
+### Recommendation
+Remove the manual index mapping and use the enum discriminant directly or rely on the `u8` stored in the `StakeLot` state.
+
 ---
-## I-02 use #[derive(InitSpace)] for account space calculation 
-Instead of the manual impl used in the state.rs for the structs (ProgramConfig, Pool, StakeLot) in the [state.rs](/programs/sol_memecoin_staking/src/state.rs), the InitSpace will automatically calculate the size of the Account in future if changes are made and sometimes, dev can forget to update the space where `AccountCouldNotDeserialize` errors will pop up due to wrong accout size parsing.
+
+## I-02: Use `#[derive(InitSpace)]` for Robust Space Calculation
+
+### Summary
+Account sizes in `state.rs` are calculated using manual constants. Using Anchor's `InitSpace` macro is a safer and more maintainable approach.
+
+### Detail
+Manual space calculations (e.g., `8 + 32 + 1 + 32`) are prone to human error, especially when fields are added or modified during development. If the `LEN` constant is not updated to match the struct, the program will fail to deserialize accounts or may corrupt data.
+
+### Recommendation
+Implement `#[derive(InitSpace)]` on all state structs and use `Type::INIT_SPACE` for account allocation in the instruction structs.
