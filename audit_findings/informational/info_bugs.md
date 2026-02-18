@@ -21,3 +21,57 @@ Manual space calculations (e.g., `8 + 32 + 1 + 32`) are prone to human error, es
 
 ### Recommendation
 Implement `#[derive(InitSpace)]` on all state structs and use `Type::INIT_SPACE` for account allocation in the instruction structs.
+
+---
+
+## I-03: Prefer Associated Token Accounts for User Holdings
+
+### Summary
+The current `stake` instruction's `user_token_account` accepts any valid `TokenAccount` owned by the user for the specific mint, rather than explicitly enforcing the use of an Associated Token Account (ATA).
+
+### Detail
+While the existing constraints (`token::mint` and `token::authority`) ensure the provided `TokenAccount` belongs to the user and holds the correct token, they do not guarantee it is an ATA. This deviates from Solana's standard token interaction pattern.
+
+Using ATAs offers:
+*   **Standardization:** Aligns with the widely adopted best practice for user token ownership on Solana.
+*   **Clarity and Predictability:** Simplifies client-side interactions as the ATA address is deterministically derived.
+*   **Enhanced Security:** Provides a stronger guarantee that the program is interacting with the user's canonical token account, reducing potential edge cases or misuse of custom token accounts.
+
+### Recommendation
+Modify the `user_token_account` in the `Stake` instruction to explicitly enforce it as an Associated Token Account using Anchor's `associated_token::mint` and `associated_token::authority` constraints.
+
+**Example Change:**
+
+```rust
+// Before
+#[account(
+    mut,
+    token::mint = token_mint,
+    token::authority = user,
+    token::token_program = token_program,
+)]
+pub user_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+
+// After
+#[account(
+    mut,
+    associated_token::mint = token_mint,
+    associated_token::authority = user,
+)]
+pub user_token_account: Box<InterfaceAccount<'info, TokenAccount>>,
+```
+
+Also, ensure `anchor_spl::associated_token::AssociatedToken` is imported.
+
+---
+
+## I-04: Redundant `amount` and `tier` in `Stake` Instruction Context
+
+### Summary
+The `amount: u64` and `tier: StakingTier` fields in the `Stake` instruction context struct are redundant as they are already passed as direct instruction arguments to the `stake` handler function.
+
+### Detail
+Including `amount: u64` and `tier: StakingTier` within the `Stake` struct duplicates information that is already provided as explicit instruction arguments. The Anchor framework automatically handles the deserialization of instruction arguments, making these fields in the context struct unnecessary. Removing them simplifies the instruction's signature.
+
+### Recommendation
+Remove the `amount: u64` and `tier: StakingTier` fields from the `Stake` instruction context struct in `programs/sol_memecoin_staking/src/instructions/stake.rs`. The values can be directly accessed as parameters of the `stake` handler function.
