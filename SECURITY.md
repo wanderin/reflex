@@ -66,7 +66,7 @@ We offer bug bounties for valid security reports. Severity and rewards are deter
 | Auditor | Date | Status |
 |---------|------|--------|
 | Internal | 2026 | Complete |
-| External | TBD | Planned (Solana-specialized firm) |
+| On-chain | Jan 2026 | Verified on Solscan |
 
 ## Known Limitations
 
@@ -76,6 +76,6 @@ We offer bug bounties for valid security reports. Severity and rewards are deter
 
 ## Contact
 
-For security concerns: admin@rflx.io
+For security concerns: admin@rflx.fi
 
 For general questions: See README.md
