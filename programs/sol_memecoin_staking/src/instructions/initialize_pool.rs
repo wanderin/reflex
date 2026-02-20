@@ -19,19 +19,14 @@ const MINT_SIZE: usize = 82;
 #[derive(Accounts)]
 #[instruction(creator_wallet: Pubkey)]
 pub struct InitializePool<'info> {
-    /// The authority or pool_creator who can create pools
-    /// This can either be the upgrade_authority in config or the pool_creator set in set_pool_creator
+    /// The pool creator -- anyone can create a pool (permissionless)
     #[account(mut)]
     pub authority: Signer<'info>,
 
-    /// Program config - verifies authority or pool_creator
+    /// Program config -- kept in accounts for backward compatibility
     #[account(
         seeds = [b"config"],
         bump = config.bump,
-        constraint = (
-            config.authority == authority.key() ||
-            (config.pool_creator != Pubkey::default() && config.pool_creator == authority.key())
-        ) @ StakingError::Unauthorized,
     )]
     pub config: Box<Account<'info, ProgramConfig>>,
 
@@ -136,6 +131,13 @@ pub fn handler_initialize_pool(
 ) -> Result<()> {
     // Validate that the mint doesn't have dangerous extensions
     validate_mint_extensions(&ctx.accounts.token_mint.to_account_info())?;
+
+    // Block mints with an active freeze authority -- a freeze authority holder
+    // could freeze the token vault PDA, permanently trapping staker tokens.
+    require!(
+        ctx.accounts.token_mint.freeze_authority.is_none(),
+        StakingError::FreezeAuthoritySet
+    );
 
     let pool = &mut ctx.accounts.pool;
     let clock = Clock::get()?;
