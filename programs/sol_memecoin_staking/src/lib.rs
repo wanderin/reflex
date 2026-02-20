@@ -29,6 +29,7 @@ pub use instructions::claim::*;
 pub use instructions::unstake::*;
 pub use instructions::fund_rewards::*;
 pub use instructions::admin::*;
+pub use instructions::sync_rewards::*;
 
 #[cfg(feature = "mainnet")]
 declare_id!("7mSqZcYPUGm99M6sGpNRHjorbB1NPF3ThyTpEjhkKzKF");
@@ -186,5 +187,12 @@ pub mod sol_memecoin_staking {
     /// * `new_creator` - The new creator wallet pubkey
     pub fn rotate_creator_wallet(ctx: Context<RotateCreatorWallet>, new_creator: Pubkey) -> Result<()> {
         instructions::admin::rotate_creator_wallet_handler(ctx, new_creator)
+    }
+
+    /// Sync externally-received SOL rewards in the sol_vault.
+    /// Permissionless -- anyone can call this to distribute rewards
+    /// that were sent directly to the sol_vault PDA (e.g., pump.fun creator fees).
+    pub fn sync_rewards(ctx: Context<SyncRewards>) -> Result<()> {
+        instructions::sync_rewards::handler_sync_rewards(ctx)
     }
 }

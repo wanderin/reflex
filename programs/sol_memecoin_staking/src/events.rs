@@ -92,3 +92,14 @@ pub struct PoolCreatorUpdated {
     pub new_pool_creator: Pubkey,
     pub timestamp: i64,
 }
+
+/// Emitted when externally-received SOL rewards are synced into a pool
+#[event]
+pub struct RewardsSynced {
+    pub pool: Pubkey,
+    pub syncer: Pubkey,
+    pub new_rewards: u64,
+    pub new_acc_sol_per_share: u128,
+    pub total_shares: u128,
+    pub timestamp: i64,
+}

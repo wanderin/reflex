@@ -58,4 +58,7 @@ pub enum StakingError {
 
     #[msg("Cannot fund rewards when pool has no stakers")]
     NoStakers,
+
+    #[msg("Token mint has an active freeze authority")]
+    FreezeAuthoritySet,
 }

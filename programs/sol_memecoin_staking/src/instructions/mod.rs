@@ -5,3 +5,4 @@ pub mod claim;
 pub mod unstake;
 pub mod fund_rewards;
 pub mod admin;
+pub mod sync_rewards;
