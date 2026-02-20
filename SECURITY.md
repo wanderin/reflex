@@ -48,11 +48,12 @@ We offer bug bounties for valid security reports. Severity and rewards are deter
 
 ### On-Chain Program
 
-- **Upgrade Authority:** Program is upgradeable by designated authority only
+- **Upgrade Authority:** Program is upgradeable via Squads multisig only
 - **Initialize Config:** Requires program upgrade authority signature
 - **Token Extensions:** Dangerous Token-2022 extensions are blocked
+- **Freeze Authority:** Tokens with active freeze authority are blocked at pool creation
 - **Math Safety:** All arithmetic uses checked operations
-- **Authorization:** Every instruction verifies caller permissions
+- **Permissionless Design:** Pool creation and reward syncing require no special authority
 - **Lock Enforcement:** Tier lock durations enforced on-chain
 
 ### Operational Security
@@ -72,7 +73,7 @@ We offer bug bounties for valid security reports. Severity and rewards are deter
 
 1. **Authority Model:** Program upgrade authority is managed via Squads multisig for production security.
 2. **No Slashing:** Permanent stakes cannot be recovered even in emergencies.
-3. **Reward Timing:** Rewards are distributed when `fund_rewards` is called, not continuously.
+3. **Reward Timing:** Rewards are distributed when `sync_rewards` or `fund_rewards` is called, not continuously.
 
 ## Contact
 

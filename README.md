@@ -1,12 +1,12 @@
 # Reflex Staking Protocol
 
-A Solana on-chain program for multi-pool Token-2022 staking with SOL reward distribution.
+A Solana on-chain program for multi-pool token staking with SOL reward distribution.
 
 **Program ID:** `7mSqZcYPUGm99M6sGpNRHjorbB1NPF3ThyTpEjhkKzKF`
 
 ## Overview
 
-Users stake Token-2022 tokens into pools and earn SOL rewards proportional to their shares. Longer lock commitments receive a tier bonus on share calculation.
+Users stake tokens (SPL Token or Token-2022) into pools and earn SOL rewards proportional to their shares. Longer lock commitments receive a tier bonus on share calculation. Pool creation and reward syncing are fully permissionless.
 
 ### Share Calculation
 
@@ -32,7 +32,7 @@ Permanent stakes cannot be unstaked. Rewards can still be claimed.
 ### Reward Distribution
 
 Uses the MasterChef accumulator pattern:
-- `acc_sol_per_share` increases when rewards are funded
+- `acc_sol_per_share` increases when rewards are funded or synced
 - `pending = (shares * acc_sol_per_share) - reward_debt`
 - `reward_debt` is set on stake/claim to prevent double-claiming
 
@@ -42,8 +42,9 @@ Uses the MasterChef accumulator pattern:
 |-------------|--------|-------------|
 | `initialize_config` | Upgrade authority | One-time program setup |
 | `update_authority` | Current authority | Transfer authority (must match upgrade authority) |
-| `initialize_pool` | Authority | Create a staking pool for a Token-2022 mint |
+| `initialize_pool` | Permissionless | Create a staking pool for any token mint |
 | `fund_rewards` | Authority or creator wallet | Deposit SOL rewards into a pool |
+| `sync_rewards` | Permissionless | Detect and distribute SOL sent to the pool's vault |
 | `rotate_creator_wallet` | Authority | Change which wallet can fund a pool |
 | `stake` | Any user | Stake tokens into a pool |
 | `claim` | Lot owner | Claim accumulated SOL rewards |
@@ -62,10 +63,12 @@ Uses the MasterChef accumulator pattern:
 ## Security
 
 - **Trustless design** — no admin pause or kill-switch
+- **Permissionless** — pool creation and reward syncing require no special authority
 - **Squads multisig** — program upgrade authority is managed via Squads multisig
 - Authority is verified against the on-chain upgrade authority at initialization and rotation
 - 60-second minimum stake age on claims (anti-sandwich)
 - Exact reward transfers (no vault over-drain)
+- Tokens with an active freeze authority are blocked at pool creation
 - Token-2022 dangerous extensions blocked at pool creation
 - `init-if-needed` feature disabled
 - Stake lots are closed on unstake, returning rent to the user
