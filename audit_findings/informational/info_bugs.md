@@ -75,3 +75,30 @@ Including `amount: u64` and `tier: StakingTier` within the `Stake` struct duplic
 
 ### Recommendation
 Remove the `amount: u64` and `tier: StakingTier` fields from the `Stake` instruction context struct in `programs/sol_memecoin_staking/src/instructions/stake.rs`. The values can be directly accessed as parameters of the `stake` handler function.
+
+---
+
+## I-02: Dead active field
+
+Severity: INFO  
+Status: Valid unreachable check
+
+### Description
+The `active` field is set to `true` on stake but never set to `false`. On unstake, the lot account is closed. The `active == false` state is unreachable for any existing account.
+
+### Root Cause
+- `stake.rs:117` — `stake_lot.active = true` (only write to the field)
+- `unstake.rs:31-33` — `close = user` closes the account instead of setting `active = false`
+- No code path ever sets `active = false`; the constraint `stake_lot.active` is always true for valid lots:
+
+```rust
+// stake.rs:117
+stake_lot.active = true;
+
+// unstake.rs — lot is closed, not marked inactive
+#[account(..., close = user)]
+pub stake_lot: Account<'info, StakeLot>,
+```
+
+### Recommendation
+Either remove the `active` field and rely on account existence, or set `active = false` before closing for auditability.
