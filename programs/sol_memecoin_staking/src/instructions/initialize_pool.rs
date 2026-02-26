@@ -142,9 +142,24 @@ pub fn handler_initialize_pool(
     let pool = &mut ctx.accounts.pool;
     let clock = Clock::get()?;
 
-    // Use provided multipliers or defaults
-    let multipliers = tier_multipliers.unwrap_or(DEFAULT_TIER_MULTIPLIERS);
-    
+    let config = &ctx.accounts.config;
+
+    // Only program authority or pool_creator may set custom multipliers.
+    // Permissionless callers always get the safe DEFAULT_TIER_MULTIPLIERS.
+    let multipliers = match tier_multipliers {
+        Some(custom) => {
+            let is_authority = ctx.accounts.authority.key() == config.authority;
+            let is_pool_creator = config.pool_creator != Pubkey::default()
+                && ctx.accounts.authority.key() == config.pool_creator;
+            require!(
+                is_authority || is_pool_creator,
+                StakingError::Unauthorized
+            );
+            custom
+        }
+        None => DEFAULT_TIER_MULTIPLIERS,
+    };
+
     // Validate multipliers - all must be >= 10000 (at least 1x) and <= 100000 (max 10x)
     for mult in multipliers.iter() {
         require!(*mult >= 10_000 && *mult <= MAX_TIER_MULTIPLIER, StakingError::InvalidMultipliers);
