@@ -51,6 +51,10 @@ pub fn handler_merge_lots(ctx: Context<MergeLots>) -> Result<()> {
     require!(lot_keep.tier == lot_close.tier, StakingError::TierMismatch);
     require!(lot_keep.key() != lot_close.key(), StakingError::InvalidAmount);
 
+    // Fail fast if either lot has a corrupted tier value
+    lot_keep.get_tier()?;
+    lot_close.get_tier()?;
+
     let merged_amount = lot_close.amount;
     let merged_shares = lot_close.shares;
 
