@@ -67,7 +67,7 @@ pub fn handler_add_to_lot(ctx: Context<AddToLot>, amount: u64) -> Result<()> {
 
     require!(amount > 0, StakingError::InvalidAmount);
 
-    let tier = stake_lot.get_tier();
+    let tier = stake_lot.get_tier()?;
 
     let new_shares = pool.calculate_shares(amount, &tier)?;
     require!(new_shares > 0, StakingError::ZeroShares);

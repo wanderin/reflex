@@ -165,23 +165,17 @@ impl StakeLot {
     /// 8 (discriminator) + 32 + 32 + 8 + 1 + 1 + 8 + 16 + 8 + 8 + 16 + 8 + 1 + 8 + (3 * 8)
     pub const LEN: usize = 8 + 32 + 32 + 8 + 1 + 1 + 8 + 16 + 8 + 8 + 16 + 8 + 1 + 8 + (3 * 8);
     
-    /// Get the staking tier enum from stored u8
-    /// 
-    /// Fallback: If tier is somehow invalid (>5), defaults to Permanent (most restrictive).
-    /// This is a safety measure - if data is corrupted, users cannot unexpectedly unstake.
-    /// In practice, tier is always set via `tier.index() as u8` which only produces 0-5.
-    pub fn get_tier(&self) -> StakingTier {
+    /// Get the staking tier enum from stored u8.
+    /// Returns an error for invalid values rather than silently defaulting.
+    pub fn get_tier(&self) -> Result<StakingTier> {
         match self.tier {
-            0 => StakingTier::Flexible,
-            1 => StakingTier::Hours24,
-            2 => StakingTier::Hours72,
-            3 => StakingTier::Week1,
-            4 => StakingTier::Month1,
-            5 => StakingTier::Permanent,
-            invalid => {
-                msg!("WARNING: Invalid tier value {}, defaulting to Permanent", invalid);
-                StakingTier::Permanent
-            }
+            0 => Ok(StakingTier::Flexible),
+            1 => Ok(StakingTier::Hours24),
+            2 => Ok(StakingTier::Hours72),
+            3 => Ok(StakingTier::Week1),
+            4 => Ok(StakingTier::Month1),
+            5 => Ok(StakingTier::Permanent),
+            _ => Err(StakingError::InvalidTier.into()),
         }
     }
     

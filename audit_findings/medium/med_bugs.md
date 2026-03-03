@@ -1,5 +1,8 @@
 ## M-01: Administrative Deadlock in `set_pool_creator` during Authority Transition
 
+**Severity:** Medium
+**Status:** Acknowledged — Accepted Risk
+
 ### Summary
 The `handler_set_pool_creator` instruction contains a logic deadlock that makes it impossible to execute during the transition period between transferring the program's upgrade authority and syncing the on-chain `ProgramConfig`.
 
@@ -38,3 +41,9 @@ The `set_pool_creator` function is completely bricked during the transition peri
 
 ### Recommendation
 Update the `SetPoolCreator` struct or handler to allow either the `config.authority` OR the `upgrade_authority` to sign, or remove the dual requirement. Ideally, the `upgrade_authority` should be the ultimate source of truth and should be able to override the `config.authority`.
+
+---
+
+### Team Response
+
+This is a direct consequence of the same dual-check design described in H-01. During the brief transition window between transferring upgrade authority and calling `update_authority`, `set_pool_creator` is temporarily unusable. Since our workflow completes both steps in the same session, this deadlock window does not occur in practice. We accept this as part of the same intentional trade-off documented in H-01.

@@ -1,5 +1,8 @@
 ## L-01: Risky Default to `StakingTier::Permanent` for Invalid Input
 
+**Severity:** Low
+**Status:** Fixed ✅
+
 ### Summary
 The `get_tier` mapping function defaults any invalid input to the `Permanent` tier, which permanently locks user funds.
 
@@ -27,7 +30,18 @@ Revert the transaction with a clear error message (e.g., `InvalidStakingTier`) i
 
 ---
 
+### Team Response
+
+Good catch on the defensive programming principle. While the invalid branch is unreachable in practice (`tier` is only ever written via `tier.index() as u8`, which produces 0–5), silently defaulting to the most restrictive tier is the wrong fail-safe direction.
+
+**Fix applied:** `get_tier()` now returns `Result<StakingTier>` and the invalid arm returns `Err(StakingError::InvalidTier)` instead of defaulting to `Permanent`. All callers updated to propagate the error. No effect on existing lots or pools since no stored `tier` value is outside the 0–5 range.
+
+---
+
 ## L-02: Unvalidated Multiplier Ordering Allows Reward Gaming
+
+**Severity:** Low
+**Status:** Acknowledged — Won't Fix (by design)
 
 ### Summary
 The `handler_initialize_pool` instruction validates that multipliers are within a specific range but does not enforce that longer lock durations receive higher rewards.
@@ -55,3 +69,11 @@ for i in 1..multipliers.len() {
     require!(multipliers[i] >= multipliers[i-1], StakingError::InvalidMultiplierOrdering);
 }
 ```
+
+---
+
+### Team Response
+
+The observation about multiplier ordering is well-reasoned, but this is an intentional trust-model decision. Custom multipliers can **only** be set by `config.authority` or `pool_creator` — both are trusted, team-controlled wallets. Permissionless pool creators always receive the hardcoded `DEFAULT_TIER_MULTIPLIERS` which are correctly ordered.
+
+We intentionally leave ordering flexible for trusted roles because some pools may have legitimate reasons for non-standard multiplier curves (e.g., promotional campaigns where a specific tier is temporarily boosted). Enforcing strict ascending order would remove that flexibility without meaningful security gain, since these wallets already have the power to fund rewards and rotate creator wallets.

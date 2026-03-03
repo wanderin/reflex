@@ -1,5 +1,8 @@
 ## H-01: Permanent Administrative Lockout if Old Authority Key is Lost
 
+**Severity:** High
+**Status:** Acknowledged — Accepted Risk (by design)
+
 ### Summary
 The `update_authority` mechanism requires the current `config.authority` to sign the transaction to sync the state with a new program upgrade authority. If the old authority key is lost after the CLI transfer, the program's administrative state becomes permanently un-syncable and bricked.
 
@@ -25,3 +28,11 @@ Critical administrative functions (creating pools, rotating creator wallets, set
 
 ### Recommendation
 Allow the `update_authority` instruction to be signed by the **new** `upgrade_authority` detected in `ProgramData` as a "force-sync" or "claim" mechanism. Since the `upgrade_authority` has the power to upgrade the program's code, they should inherently be trusted to take control of the on-chain configuration state.
+
+---
+
+### Team Response
+
+The dual-signature requirement (`config.authority` + `upgrade_authority`) on `update_authority` is an intentional defense-in-depth measure. If an attacker compromises the admin key alone, they cannot take over the program because they would also need to be the upgrade authority. Allowing the new upgrade authority to unilaterally claim the config would weaken this security boundary.
+
+Our operational procedure calls `update_authority` immediately after any CLI upgrade authority transfer, and the program is managed through a Squads multisig — so the window for key loss between steps is effectively zero. We acknowledge the theoretical risk and accept it as a trade-off for stronger theft protection.
