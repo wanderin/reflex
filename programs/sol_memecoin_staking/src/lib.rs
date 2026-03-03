@@ -30,6 +30,8 @@ pub use instructions::unstake::*;
 pub use instructions::fund_rewards::*;
 pub use instructions::admin::*;
 pub use instructions::sync_rewards::*;
+pub use instructions::add_to_lot::*;
+pub use instructions::merge_lots::*;
 
 #[cfg(feature = "mainnet")]
 declare_id!("7mSqZcYPUGm99M6sGpNRHjorbB1NPF3ThyTpEjhkKzKF");
@@ -194,5 +196,22 @@ pub mod sol_memecoin_staking {
     /// that were sent directly to the sol_vault PDA (e.g., pump.fun creator fees).
     pub fn sync_rewards(ctx: Context<SyncRewards>) -> Result<()> {
         instructions::sync_rewards::handler_sync_rewards(ctx)
+    }
+
+    /// Add more tokens to an existing stake lot.
+    /// Preserves pending rewards exactly via additive debt.
+    /// Extends the lock timer: unlock_at = max(current, now + tier_duration).
+    ///
+    /// # Arguments
+    /// * `amount` - Number of tokens to add (in smallest unit)
+    pub fn add_to_lot(ctx: Context<AddToLot>, amount: u64) -> Result<()> {
+        instructions::add_to_lot::handler_add_to_lot(ctx, amount)
+    }
+
+    /// Merge two stake lots of the same tier into one.
+    /// The second lot is closed and its rent (~0.002 SOL) returned to the user.
+    /// No token transfer needed -- tokens stay in the same vault.
+    pub fn merge_lots(ctx: Context<MergeLots>) -> Result<()> {
+        instructions::merge_lots::handler_merge_lots(ctx)
     }
 }

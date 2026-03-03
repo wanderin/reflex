@@ -61,4 +61,7 @@ pub enum StakingError {
 
     #[msg("Token mint has an active freeze authority")]
     FreezeAuthoritySet,
+
+    #[msg("Cannot merge lots with different tiers")]
+    TierMismatch,
 }

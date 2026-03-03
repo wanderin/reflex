@@ -103,3 +103,31 @@ pub struct RewardsSynced {
     pub total_shares: u128,
     pub timestamp: i64,
 }
+
+/// Emitted when tokens are added to an existing stake lot
+#[event]
+pub struct AddedToLot {
+    pub pool: Pubkey,
+    pub user: Pubkey,
+    pub lot: Pubkey,
+    pub added_amount: u64,
+    pub new_total_amount: u64,
+    pub added_shares: u128,
+    pub new_total_shares: u128,
+    pub new_unlock_at: i64,
+    pub timestamp: i64,
+}
+
+/// Emitted when two stake lots of the same tier are merged
+#[event]
+pub struct LotsMerged {
+    pub pool: Pubkey,
+    pub user: Pubkey,
+    pub lot_kept: Pubkey,
+    pub lot_closed: Pubkey,
+    pub merged_amount: u64,
+    pub merged_shares: u128,
+    pub new_total_amount: u64,
+    pub new_total_shares: u128,
+    pub timestamp: i64,
+}

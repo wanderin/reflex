@@ -6,3 +6,5 @@ pub mod unstake;
 pub mod fund_rewards;
 pub mod admin;
 pub mod sync_rewards;
+pub mod add_to_lot;
+pub mod merge_lots;
