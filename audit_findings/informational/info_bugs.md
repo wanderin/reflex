@@ -111,3 +111,50 @@ Either remove the `active` field and rely on account existence, or set `active =
 ### Team Response
 
 Correct observation — the field is always `true` for existing accounts since lots are closed on unstake rather than marked inactive. However, removing the field would change the account layout and break deserialization of all existing `StakeLot` accounts in production. The 1-byte overhead per lot is acceptable for layout stability. We may repurpose this field in a future version.
+
+
+---
+
+## I-06: Permissionless Pool Creation Enables Fake Pool Phishing
+
+**Severity:** Informational
+**Status:** Open
+
+### Summary
+Any user can create a staking pool for any SPL token mint. There is no on-chain validation that the token being pooled is a legitimate or recognized asset. This enables an attacker to create a pool for a fake copycat token and trick users into staking in the wrong pool.
+
+### Detail
+Pool creation in `initialize_pool.rs` is explicitly permissionless — the comment on line 22 reads `"Anyone can create a pool (permissionless)"`. The pool PDA is seeded only by the token mint address:
+
+```rust
+seeds = [b"pool", token_mint.key().as_ref()]
+```
+
+The contract correctly enforces that staked tokens must match the pool's `token_mint`, meaning cross-pool contamination is impossible. However, there is no on-chain registry or whitelist that distinguishes the real project pool from an attacker-created pool for a look-alike token.
+
+**Attack scenario:**
+1. A legitimate project creates Pool A for their memecoin and funds it with SOL rewards.
+2. An attacker mints a fake token with the same name and symbol, then creates Pool B for it without funding any SOL.
+3. A user who receives the wrong pool address (e.g., via a phishing link or misleading UI) stakes into Pool B.
+4. The user's tokens are locked in Pool B with no SOL rewards to claim.
+
+Note: An attacker staking their fake tokens into a legitimate funded pool is **not possible** — each pool PDA is isolated to its own mint. The risk here is purely social engineering and user confusion, not direct fund theft from the protocol.
+
+**Attack scenario 2 — Majority share griefing / reward drain:**
+1. An attacker creates a pool for a worthless token they control and mints a large supply at near-zero cost.
+2. The attacker stakes the vast majority of that supply into the pool using the Permanent tier (2x multiplier), accumulating dominant share weight.
+3. Through phishing, a fake UI, or misleading social media, a victim is convinced to send SOL directly to the pool's SOL vault address (or call `fund_rewards`) believing they are funding a legitimate project's reward pool.
+4. `sync_rewards` is called (permissionlessly by anyone, including the attacker), which distributes the newly detected SOL across all shares proportional to weight.
+5. Because the attacker holds the majority of shares, they claim the majority of the victim's deposited SOL immediately via `claim`.
+6. The attacker walks away with most of the victim's SOL; the victim is left with staked worthless tokens and negligible rewards.
+
+
+### Recommendation
+This is a design-level consideration rather than a code bug. Mitigations belong at the frontend/UX layer:
+- The official UI should only surface pools for verified/whitelisted mint addresses.
+- Pool addresses should be prominently shown and cross-referenced with official project communications.
+- Consider maintaining an off-chain registry of canonical pool addresses per project.
+
+### Team Response
+
+_Pending_
