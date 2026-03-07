@@ -157,4 +157,10 @@ This is a design-level consideration rather than a code bug. Mitigations belong 
 
 ### Team Response
 
-_Pending_
+Both scenarios are valid observations about the permissionless nature of pool creation, and we agree the mitigations belong at the frontend layer — not on-chain. Adding an on-chain whitelist would contradict the trustless, permissionless design of the protocol.
+
+Our official frontend at rflx.fi only surfaces pools that have been verified by the team. Each pool is cross-referenced against its canonical mint address and displayed with clear token metadata. Users interacting through our UI are not exposed to fake or unverified pools.
+
+For the reward drain scenario: any user who calls `fund_rewards` or sends SOL directly to a vault address on a pool they did not independently verify is operating outside our official UI. We will add prominent warnings in our documentation advising users to only interact through the official frontend and to verify pool addresses through official channels before funding.
+
+**Status:** Acknowledged — Mitigated at the frontend layer
