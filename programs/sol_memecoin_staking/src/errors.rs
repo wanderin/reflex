@@ -64,4 +64,7 @@ pub enum StakingError {
 
     #[msg("Cannot merge lots with different tiers")]
     TierMismatch,
+
+    #[msg("Cannot transfer a stake lot to yourself")]
+    SelfTransferNotAllowed,
 }

@@ -131,3 +131,17 @@ pub struct LotsMerged {
     pub new_total_shares: u128,
     pub timestamp: i64,
 }
+
+/// Emitted when a stake lot is transferred to a new owner
+#[event]
+pub struct StakeLotTransferred {
+    pub pool: Pubkey,
+    pub old_owner: Pubkey,
+    pub new_owner: Pubkey,
+    pub old_lot: Pubkey,
+    pub new_lot: Pubkey,
+    pub amount: u64,
+    pub shares: u128,
+    pub tier: u8,
+    pub timestamp: i64,
+}

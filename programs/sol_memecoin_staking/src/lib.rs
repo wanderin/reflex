@@ -32,6 +32,7 @@ pub use instructions::admin::*;
 pub use instructions::sync_rewards::*;
 pub use instructions::add_to_lot::*;
 pub use instructions::merge_lots::*;
+pub use instructions::transfer_stake_lot::*;
 
 #[cfg(feature = "mainnet")]
 declare_id!("7mSqZcYPUGm99M6sGpNRHjorbB1NPF3ThyTpEjhkKzKF");
@@ -213,5 +214,16 @@ pub mod sol_memecoin_staking {
     /// No token transfer needed -- tokens stay in the same vault.
     pub fn merge_lots(ctx: Context<MergeLots>) -> Result<()> {
         instructions::merge_lots::handler_merge_lots(ctx)
+    }
+
+    /// Transfer a stake lot to a new owner.
+    /// Atomically closes old lot PDA and creates new one under the recipient.
+    /// No tokens move -- they stay in the pool vault. Pending rewards carry over.
+    /// Only the current owner can initiate a transfer.
+    ///
+    /// # Arguments
+    /// * `new_lot_seed` - The lot seed for the new owner's PDA
+    pub fn transfer_stake_lot(ctx: Context<TransferStakeLot>, new_lot_seed: u64) -> Result<()> {
+        instructions::transfer_stake_lot::handler_transfer_stake_lot(ctx, new_lot_seed)
     }
 }
