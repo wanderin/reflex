@@ -35,6 +35,10 @@ const testSuites = [
     name: "Edge Case Tests",
     file: "edge-cases.test.ts",
   },
+  {
+    name: "Merge Lots & Add To Lot Tests",
+    file: "merge-lots.test.ts",
+  },
 ];
 
 async function runAllTests() {

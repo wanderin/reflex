@@ -1,0 +1,32 @@
+{
+  "name": "sol-memecoin-staking",
+  "version": "1.0.0",
+  "license": "MIT",
+  "scripts": {
+    "test:merge-lots": "ts-node tests/merge-lots.test.ts",
+    "test:functional": "ts-node tests/functional.test.ts",
+    "test:security": "ts-node tests/run-all.ts",
+    "test:audit": "ts-node tests/audit-coverage.test.ts",
+    "test:e2e": "ts-node tests/comprehensive-e2e.test.ts",
+    "test:tiers": "ts-node tests/tier-validation.test.ts",
+    "test:edge": "ts-node tests/edge-cases.test.ts",
+    "test:edge-ext": "ts-node tests/edge-cases-extended.test.ts",
+    "test:advanced": "ts-node tests/security-advanced.test.ts",
+    "test:stress": "ts-node tests/stress-20-wallets.test.ts"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.1.5",
+    "@types/chai": "^4.3.16",
+    "@types/mocha": "^10.0.7",
+    "@types/node": "^20.14.10",
+    "ts-mocha": "^10.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.3"
+  },
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.1",
+    "@solana/spl-token": "^0.4.6",
+    "@solana/web3.js": "^1.95.3",
+    "bn.js": "^5.2.1"
+  }
+}
