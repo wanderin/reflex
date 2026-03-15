@@ -80,7 +80,7 @@ pub fn handler_transfer_stake_lot(
     new_lot.reward_debt = old_lot.reward_debt;
     new_lot.total_claimed = old_lot.total_claimed;
     new_lot.active = true;
-    new_lot.last_claimed_at = clock.unix_timestamp; // Reset 60s anti-sandwich cooldown
+    new_lot.last_claimed_at = clock.unix_timestamp; // Reset for analytics tracking
     new_lot.reserved = [0; 3];
 
     // old_lot is closed via `close = owner` constraint

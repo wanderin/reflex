@@ -107,10 +107,7 @@ pub fn handler_initialize_config(ctx: Context<InitializeConfig>) -> Result<()> {
 
 #[derive(Accounts)]
 pub struct UpdateAuthority<'info> {
-    /// The current authority
-    #[account(
-        constraint = authority.key() == config.authority @ StakingError::Unauthorized,
-    )]
+    /// Either the current config.authority or the program upgrade authority (fixes H-01)
     pub authority: Signer<'info>,
 
     /// The config PDA
@@ -137,11 +134,14 @@ pub struct UpdateAuthority<'info> {
     pub program_data: UncheckedAccount<'info>,
 }
 
-/// Update the program authority. Only current authority can call.
+/// Update the program authority. Callable by config.authority OR upgrade authority.
 /// new_authority must match the current program upgrade authority.
-/// 
+///
 /// Workflow: First transfer upgrade authority via `solana program set-upgrade-authority`,
 /// then call this to sync config.authority.
+///
+/// The upgrade authority can call this directly if the old config.authority key is lost,
+/// preventing permanent administrative lockout (fixes H-01).
 pub fn handler_update_authority(
     ctx: Context<UpdateAuthority>,
     new_authority: Pubkey,
@@ -154,22 +154,29 @@ pub fn handler_update_authority(
     // Verify new_authority matches the current program upgrade authority
     let program_data_info = ctx.accounts.program_data.to_account_info();
     let program_data = program_data_info.try_borrow_data()?;
-    
+
     require!(program_data.len() >= 45, StakingError::Unauthorized);
-    
+
     // Verify ProgramData discriminant
     let discriminant = u32::from_le_bytes([
         program_data[0], program_data[1], program_data[2], program_data[3]
     ]);
     require!(discriminant == 3, StakingError::Unauthorized);
-    
+
     // Verify upgrade authority is set
     require!(program_data[12] == 1, StakingError::NotUpgradeAuthority);
-    
+
     // Extract upgrade authority pubkey
     let upgrade_authority = Pubkey::try_from(&program_data[13..45])
         .map_err(|_| StakingError::Unauthorized)?;
-    
+
+    // Signer must be either config.authority or upgrade_authority (fixes H-01)
+    require!(
+        ctx.accounts.authority.key() == config.authority
+            || ctx.accounts.authority.key() == upgrade_authority,
+        StakingError::Unauthorized
+    );
+
     // new_authority must be the upgrade authority
     require!(
         new_authority == upgrade_authority,
@@ -192,10 +199,7 @@ pub fn handler_update_authority(
 
 #[derive(Accounts)]
 pub struct SetPoolCreator<'info> {
-    /// The current authority - must match config.authority AND be upgrade authority
-    #[account(
-        constraint = authority.key() == config.authority @ StakingError::Unauthorized,
-    )]
+    /// Either the current config.authority or the program upgrade authority (fixes M-01)
     pub authority: Signer<'info>,
 
     /// The config PDA
@@ -223,7 +227,7 @@ pub struct SetPoolCreator<'info> {
 }
 
 /// Set or update the pool_creator role.
-/// Only the global authority can call this (verified as upgrade authority).
+/// Callable by config.authority OR upgrade authority (fixes M-01 deadlock).
 /// The pool_creator can only create pools - no other admin powers.
 ///
 /// # Arguments
@@ -232,7 +236,6 @@ pub fn handler_set_pool_creator(
     ctx: Context<SetPoolCreator>,
     new_pool_creator: Pubkey,
 ) -> Result<()> {
-    // Belt-and-suspenders: verify signer is also the upgrade authority
     let program_data_info = ctx.accounts.program_data.to_account_info();
     let program_data = program_data_info.try_borrow_data()?;
 
@@ -248,12 +251,14 @@ pub fn handler_set_pool_creator(
     let upgrade_authority = Pubkey::try_from(&program_data[13..45])
         .map_err(|_| StakingError::Unauthorized)?;
 
+    // Signer must be either config.authority or upgrade_authority (fixes M-01)
+    let config = &mut ctx.accounts.config;
     require!(
-        ctx.accounts.authority.key() == upgrade_authority,
-        StakingError::NotUpgradeAuthority
+        ctx.accounts.authority.key() == config.authority
+            || ctx.accounts.authority.key() == upgrade_authority,
+        StakingError::Unauthorized
     );
 
-    let config = &mut ctx.accounts.config;
     let clock = Clock::get()?;
 
     let old_pool_creator = config.pool_creator;

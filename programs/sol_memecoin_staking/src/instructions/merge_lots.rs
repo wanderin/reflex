@@ -76,6 +76,10 @@ pub fn handler_merge_lots(ctx: Context<MergeLots>) -> Result<()> {
     // Keep the later unlock time
     lot_keep.unlock_at = lot_keep.unlock_at.max(lot_close.unlock_at);
 
+    // Anti-sandwich: use the newer staked_at so merged-in fresh tokens
+    // are subject to the full 60s claim cooldown (fixes M-02)
+    lot_keep.staked_at = lot_keep.staked_at.max(lot_close.staked_at);
+
     pool.active_lots = pool.active_lots
         .checked_sub(1)
         .ok_or(StakingError::MathOverflow)?;

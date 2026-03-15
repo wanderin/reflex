@@ -1,7 +1,7 @@
 ## M-01: Administrative Deadlock in `set_pool_creator` during Authority Transition
 
 **Severity:** Medium
-**Status:** Acknowledged — Accepted Risk
+**Status:** Fixed
 
 ### Summary
 The `handler_set_pool_creator` instruction contains a logic deadlock that makes it impossible to execute during the transition period between transferring the program's upgrade authority and syncing the on-chain `ProgramConfig`.
@@ -46,14 +46,14 @@ Update the `SetPoolCreator` struct or handler to allow either the `config.author
 
 ### Team Response
 
-This is a direct consequence of the same dual-check design described in H-01. During the brief transition window between transferring upgrade authority and calling `update_authority`, `set_pool_creator` is temporarily unusable. Since our workflow completes both steps in the same session, this deadlock window does not occur in practice. We accept this as part of the same intentional trade-off documented in H-01.
+**Fix applied:** `SetPoolCreator` now accepts either `config.authority` OR `upgrade_authority` as the signer, eliminating the deadlock. During an authority transition, the new upgrade authority can call `set_pool_creator` directly without waiting for config sync. Same OR-logic fix applied to `UpdateAuthority` (see H-01). This does not reduce security — the upgrade authority already has ultimate power over the program binary.
 
 ---
 
 ## M-02: `merge_lots` Bypasses 60-Second Anti-Sandwich Cooldown
 
 **Severity:** Medium
-**Status:** Open
+**Status:** Fixed
 
 ### Summary
 
@@ -106,10 +106,16 @@ lot_keep.staked_at = lot_keep.staked_at.max(lot_close.staked_at);
 
 ---
 
+### Team Response
+
+**Fix applied:** `merge_lots` now updates `lot_keep.staked_at = lot_keep.staked_at.max(lot_close.staked_at)` after merging shares. The surviving lot inherits the newer timestamp, so merged-in fresh tokens are subject to the full 60-second claim cooldown. Users who merge lots must wait 60 seconds from the most recent lot's `staked_at` before claiming. `unlock_at` (unstake timing) is unaffected.
+
+---
+
 ## M-03: `add_to_lot` Bypasses 60-Second Anti-Sandwich Cooldown
 
 **Severity:** Medium
-**Status:** Open
+**Status:** Fixed
 
 ### Summary
 
@@ -160,10 +166,16 @@ Note: this changes UX for existing stakers who top up (they must wait another 60
 
 ---
 
+### Team Response
+
+**Fix applied:** `add_to_lot` now resets `stake_lot.staked_at = clock.unix_timestamp` after adding tokens. Any top-up resets the 60-second claim cooldown for the entire lot. We accept the UX trade-off — users who add tokens must wait 60 seconds before their next claim. This is consistent with the anti-sandwich guard's purpose: any new tokens entering a lot should be subject to the full cooldown. `unlock_at` (unstake timing) is unaffected — it already correctly extends on add.
+
+---
+
 ## M-04: Sole Staker Can Capture Unallocated Rewards via 1-Lamport `sync_rewards` Trigger
 
 **Severity:** Medium
-**Status:** Open
+**Status:** Acknowledged — Accepted Risk
 
 ### Summary
 
@@ -224,3 +236,13 @@ if pool.unallocated_rewards > 0 {
 ```
 
 Alternatively, accept this as a known design trade-off and document explicitly that the first staker after a reward-accumulation period will capture unallocated rewards proportional to their share dominance.
+
+---
+
+### Team Response
+
+Accepted risk. This scenario is inherent to the permissionless design and only exploitable when the attacker is the sole or dominant staker — which is realistic only at pool launch. Once multiple stakers exist, the attacker's share is diluted proportionally.
+
+`fund_rewards` already blocks funding when `total_shares == 0`, and the 60-second anti-sandwich guard in `claim` prevents single-block sandwich attacks. The remaining attack surface is a deliberate first-staker advantage: someone must be the first to stake and trigger distribution of accumulated SOL. Adding a minimum share threshold would add complexity without meaningfully changing the outcome — a determined attacker can always meet a threshold by staking more.
+
+For pump.fun pools, creator fees that arrive before stakers are parked in `unallocated_rewards` and distributed to the first stakers. We consider this acceptable behavior and will document it explicitly.

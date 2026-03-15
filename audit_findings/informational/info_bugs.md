@@ -170,7 +170,7 @@ For the reward drain scenario: any user who calls `fund_rewards` or sends SOL di
 ## I-07: `last_claimed_at` Field Is Written But Never Enforced
 
 **Severity:** Informational
-**Status:** Open
+**Status:** Acknowledged — Won't Fix (analytics use)
 
 ### Summary
 
@@ -224,3 +224,13 @@ require!(
 ```
 
 **Option B — Remove it:** Delete `last_claimed_at` from `StakeLot`, remove all writes, and update the comments and self-transfer guard rationale to reflect the actual guard mechanism (`staked_at`). Note that removing the field changes the account layout and would break deserialization of existing accounts in production.
+
+---
+
+### Team Response
+
+Correct observation — `last_claimed_at` is not enforced on-chain. We intentionally keep the field for off-chain analytics: it allows indexers and dashboards to track when each lot last claimed rewards without replaying transaction history.
+
+**Comment fix applied:** The misleading comment in `transfer_stake_lot.rs` ("Reset 60s anti-sandwich cooldown") has been corrected to "Reset for analytics tracking" to accurately reflect the field's purpose. The anti-sandwich guard uses `staked_at` exclusively, as the auditor correctly identified.
+
+Removing the field is not viable due to account layout stability (same reasoning as I-05). We will not add on-chain enforcement for `last_claimed_at` — the 60-second anti-sandwich guard via `staked_at` is sufficient and is now correctly applied across `merge_lots` (M-02) and `add_to_lot` (M-03).
