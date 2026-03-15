@@ -33,6 +33,8 @@ pub use instructions::sync_rewards::*;
 pub use instructions::add_to_lot::*;
 pub use instructions::merge_lots::*;
 pub use instructions::transfer_stake_lot::*;
+pub use instructions::fee_config::*;
+pub use instructions::collect_protocol_fees::*;
 
 #[cfg(feature = "mainnet")]
 declare_id!("7mSqZcYPUGm99M6sGpNRHjorbB1NPF3ThyTpEjhkKzKF");
@@ -48,23 +50,25 @@ pub const SCALE: u128 = 1_000_000_000_000;
 /// Staking tier enum with lock durations
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StakingTier {
-    /// 1 minute minimum lock (prevents sandwich attacks)
+    /// 1 minute minimum lock (prevents sandwich attacks) — legacy
     Flexible,
-    /// 24 hour lock
+    /// 24 hour lock — legacy
     Hours24,
-    /// 72 hour lock
+    /// 72 hour lock — legacy
     Hours72,
-    /// 1 week lock
+    /// 1 week lock — legacy
     Week1,
-    /// 1 month lock (30 days)
+    /// 1 month lock (30 days) — legacy
     Month1,
-    /// Permanent lock - cannot unstake ever
+    /// Permanent lock - cannot unstake ever (2.0x multiplier)
     Permanent,
+    /// Custom lock - user picks any unlock date (flat 1.0x multiplier)
+    Custom,
 }
 
 impl StakingTier {
-    /// Get the lock duration in seconds for this tier
-    /// Note: Flexible has 1 minute minimum to prevent sandwich attacks on fund_rewards
+    /// Get the lock duration in seconds for this tier.
+    /// Custom returns 0 — actual duration comes from user-supplied unlock_at.
     pub fn lock_duration_seconds(&self) -> u64 {
         match self {
             StakingTier::Flexible => 60,               // 1 minute (anti-sandwich)
@@ -72,11 +76,12 @@ impl StakingTier {
             StakingTier::Hours72 => 72 * 60 * 60,      // 259200 3 days
             StakingTier::Week1 => 7 * 24 * 60 * 60,    // 604800 1 week
             StakingTier::Month1 => 30 * 24 * 60 * 60,  // 2592000 1 month
-            StakingTier::Permanent => u64::MAX,        // Never unlocks permanent 
+            StakingTier::Permanent => u64::MAX,         // Never unlocks permanent
+            StakingTier::Custom => 0,                   // Duration from unlock_at param
         }
     }
 
-    /// Get tier index (0-5)
+    /// Get tier index (0-6). Custom = 6, not stored in tier_multipliers array.
     pub fn index(&self) -> usize {
         match self {
             StakingTier::Flexible => 0,
@@ -85,6 +90,7 @@ impl StakingTier {
             StakingTier::Week1 => 3,
             StakingTier::Month1 => 4,
             StakingTier::Permanent => 5,
+            StakingTier::Custom => 6,
         }
     }
 }
@@ -101,6 +107,21 @@ pub const DEFAULT_TIER_MULTIPLIERS: [u64; 6] = [
     17_000, // 1 month: 1.70x
     20_000, // Permanent: 2.00x
 ];
+
+/// Hard cap on protocol reward fee (10%)
+pub const MAX_REWARD_FEE_BPS: u16 = 1_000;
+
+/// Default protocol fee on reward distributions (2.5%)
+pub const DEFAULT_REWARD_FEE_BPS: u16 = 250;
+
+/// Custom tier index stored in StakeLot.tier
+pub const CUSTOM_TIER_INDEX: u8 = 6;
+
+/// Default multiplier for Custom tier (1.0x = 10000 bps)
+pub const DEFAULT_CUSTOM_MULTIPLIER_BPS: u64 = 10_000;
+
+/// Minimum custom lock duration in seconds (anti-sandwich)
+pub const MIN_CUSTOM_LOCK_SECONDS: i64 = 60;
 
 #[program]
 pub mod sol_memecoin_staking {
@@ -147,18 +168,20 @@ pub mod sol_memecoin_staking {
 
     /// Stake tokens into the pool with a selected tier.
     /// Creates a StakeLot PDA for tracking this stake position.
-    /// 
+    ///
     /// # Arguments
     /// * `amount` - Number of tokens to stake (in smallest unit)
     /// * `tier` - The staking tier (lock duration)
     /// * `lot_seed` - Unique seed for this lot (allows multiple lots per user)
+    /// * `unlock_at` - Required for Custom tier: unix timestamp when stake unlocks
     pub fn stake(
         ctx: Context<Stake>,
         amount: u64,
         tier: StakingTier,
         lot_seed: u64,
+        unlock_at: Option<i64>,
     ) -> Result<()> {
-        handler_stake(ctx, amount, tier, lot_seed)
+        handler_stake(ctx, amount, tier, lot_seed, unlock_at)
     }
 
     /// Claim accumulated SOL rewards for a stake lot.
@@ -225,5 +248,41 @@ pub mod sol_memecoin_staking {
     /// * `new_lot_seed` - The lot seed for the new owner's PDA
     pub fn transfer_stake_lot(ctx: Context<TransferStakeLot>, new_lot_seed: u64) -> Result<()> {
         instructions::transfer_stake_lot::handler_transfer_stake_lot(ctx, new_lot_seed)
+    }
+
+    /// Initialize the protocol fee config PDA.
+    /// Only upgrade authority or config.authority can call.
+    pub fn initialize_fee_config(
+        ctx: Context<InitializeFeeConfig>,
+        treasury: Pubkey,
+        reward_fee_bps: u16,
+    ) -> Result<()> {
+        instructions::fee_config::handler_initialize_fee_config(ctx, treasury, reward_fee_bps)
+    }
+
+    /// Update the protocol fee config (treasury, fee rate).
+    /// Only upgrade authority or config.authority can call.
+    pub fn update_fee_config(
+        ctx: Context<UpdateFeeConfig>,
+        treasury: Pubkey,
+        reward_fee_bps: u16,
+    ) -> Result<()> {
+        instructions::fee_config::handler_update_fee_config(ctx, treasury, reward_fee_bps)
+    }
+
+    /// Update per-pool config: fee exemption and/or custom multiplier.
+    /// Authority-only.
+    pub fn set_pool_config(
+        ctx: Context<SetPoolConfig>,
+        fee_exempt: Option<u8>,
+        custom_multiplier_bps: Option<u64>,
+    ) -> Result<()> {
+        instructions::fee_config::handler_set_pool_config(ctx, fee_exempt, custom_multiplier_bps)
+    }
+
+    /// Collect pending protocol fees from a pool to the treasury.
+    /// Permissionless — funds only go to the validated treasury address.
+    pub fn collect_protocol_fees(ctx: Context<CollectProtocolFees>) -> Result<()> {
+        instructions::collect_protocol_fees::handler_collect_protocol_fees(ctx)
     }
 }

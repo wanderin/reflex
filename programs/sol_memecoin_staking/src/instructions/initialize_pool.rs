@@ -8,7 +8,7 @@ use anchor_spl::token_2022::spl_token_2022::{
 use crate::state::{Pool, ProgramConfig};
 use crate::errors::StakingError;
 use crate::events::PoolInitialized;
-use crate::DEFAULT_TIER_MULTIPLIERS;
+use crate::{DEFAULT_TIER_MULTIPLIERS, DEFAULT_CUSTOM_MULTIPLIER_BPS};
 
 /// Maximum tier multiplier (10x = 100,000 basis points)
 pub const MAX_TIER_MULTIPLIER: u64 = 100_000;
@@ -237,7 +237,19 @@ pub fn handler_initialize_pool(
     pool.total_staked = 0;
     pool.created_at = clock.unix_timestamp;
     pool.creator_wallet = creator_wallet;
-    pool.reserved = [0; 4];
+
+    // New pools: disable legacy tiers (0-4), keep Permanent (5), enable Custom via reserved[2].
+    // Legacy tiers get 0 multiplier → 0 shares → ZeroShares rejection on stake.
+    // Existing pools are unaffected (they keep their original multipliers).
+    pool.tier_multipliers[0] = 0; // Flexible: disabled
+    pool.tier_multipliers[1] = 0; // 24h: disabled
+    pool.tier_multipliers[2] = 0; // 72h: disabled
+    pool.tier_multipliers[3] = 0; // 1week: disabled
+    pool.tier_multipliers[4] = 0; // 1month: disabled
+    // tier_multipliers[5] (Permanent) keeps value from multipliers array above
+
+    // reserved[0]=pending_fees, [1]=total_fees, [2]=custom_multiplier_bps, [3]=free
+    pool.reserved = [0, 0, DEFAULT_CUSTOM_MULTIPLIER_BPS, 0];
 
     emit!(PoolInitialized {
         pool: pool.key(),

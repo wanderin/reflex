@@ -67,6 +67,9 @@ pub fn handler_add_to_lot(ctx: Context<AddToLot>, amount: u64) -> Result<()> {
 
     require!(amount > 0, StakingError::InvalidAmount);
 
+    // Custom tier lots cannot use add_to_lot (create a new lot instead)
+    require!(stake_lot.tier != crate::CUSTOM_TIER_INDEX, StakingError::CustomTierNotSupported);
+
     let tier = stake_lot.get_tier()?;
 
     let new_shares = pool.calculate_shares(amount, &tier)?;

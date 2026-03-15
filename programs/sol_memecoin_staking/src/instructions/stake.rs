@@ -4,7 +4,7 @@ use anchor_spl::token_interface::{self, Mint, TokenAccount, TokenInterface, Tran
 use crate::state::{Pool, StakeLot};
 use crate::errors::StakingError;
 use crate::events::Staked;
-use crate::StakingTier;
+use crate::{StakingTier, MIN_CUSTOM_LOCK_SECONDS};
 
 #[derive(Accounts)]
 #[instruction(amount: u64, tier: StakingTier, lot_seed: u64)]
@@ -62,7 +62,7 @@ pub struct Stake<'info> {
         address = pool.token_program @ StakingError::InvalidTokenProgram,
     )]
     pub token_program: Interface<'info, TokenInterface>,
-    
+
     pub system_program: Program<'info, System>,
 }
 
@@ -71,6 +71,7 @@ pub fn handler_stake(
     amount: u64,
     tier: StakingTier,
     lot_seed: u64,
+    custom_unlock_at: Option<i64>,
 ) -> Result<()> {
     let pool = &mut ctx.accounts.pool;
     let stake_lot = &mut ctx.accounts.stake_lot;
@@ -81,7 +82,7 @@ pub fn handler_stake(
 
     // Calculate shares for this stake (returns MathOverflow on overflow)
     let shares = pool.calculate_shares(amount, &tier)?;
-    
+
     // Reject stakes that would result in zero shares (prevents broken lots)
     require!(shares > 0, StakingError::ZeroShares);
 
@@ -92,11 +93,25 @@ pub fn handler_stake(
         .checked_div(crate::SCALE)
         .ok_or(StakingError::MathOverflow)?;
 
-    // Calculate unlock time
-    let lock_duration = tier.lock_duration_seconds();
-    let unlock_at = if tier == StakingTier::Permanent {
+    // Calculate unlock time based on tier
+    let unlock_at = if tier == StakingTier::Custom {
+        // Custom tier: user provides their own unlock timestamp
+        let user_unlock = custom_unlock_at.ok_or(StakingError::CustomLockTooShort)?;
+        // Minimum 60 seconds from now (anti-sandwich)
+        require!(
+            user_unlock >= clock.unix_timestamp + MIN_CUSTOM_LOCK_SECONDS,
+            StakingError::CustomLockTooShort
+        );
+        // Must not be permanent — use Permanent tier for that
+        require!(
+            user_unlock < i64::MAX,
+            StakingError::CustomLockPermanentNotAllowed
+        );
+        user_unlock
+    } else if tier == StakingTier::Permanent {
         i64::MAX
     } else {
+        let lock_duration = tier.lock_duration_seconds();
         clock.unix_timestamp
             .checked_add(lock_duration as i64)
             .ok_or(StakingError::MathOverflow)?
@@ -138,7 +153,7 @@ pub fn handler_stake(
     };
     let cpi_program = ctx.accounts.token_program.to_account_info();
     let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
-    
+
     token_interface::transfer_checked(
         cpi_ctx,
         amount,
@@ -163,6 +178,6 @@ pub fn handler_stake(
         shares,
         unlock_at
     );
-    
+
     Ok(())
 }

@@ -9,3 +9,5 @@ pub mod sync_rewards;
 pub mod add_to_lot;
 pub mod merge_lots;
 pub mod transfer_stake_lot;
+pub mod fee_config;
+pub mod collect_protocol_fees;

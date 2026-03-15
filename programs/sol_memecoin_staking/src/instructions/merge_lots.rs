@@ -51,6 +51,9 @@ pub fn handler_merge_lots(ctx: Context<MergeLots>) -> Result<()> {
     require!(lot_keep.tier == lot_close.tier, StakingError::TierMismatch);
     require!(lot_keep.key() != lot_close.key(), StakingError::InvalidAmount);
 
+    // Custom tier lots cannot be merged (create separate lots instead)
+    require!(lot_keep.tier != crate::CUSTOM_TIER_INDEX, StakingError::CustomTierNotSupported);
+
     // Fail fast if either lot has a corrupted tier value
     lot_keep.get_tier()?;
     lot_close.get_tier()?;

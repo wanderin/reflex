@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::state::Pool;
+use crate::state::{Pool, ProtocolFeeConfig};
 use crate::errors::StakingError;
 use crate::events::RewardsSynced;
 use crate::SCALE;
@@ -25,6 +25,13 @@ pub struct SyncRewards<'info> {
         bump = pool.sol_vault_bump,
     )]
     pub sol_vault: SystemAccount<'info>,
+
+    /// Optional: protocol fee config. If absent, no fee is taken.
+    #[account(
+        seeds = [b"fee_config"],
+        bump = fee_config.bump,
+    )]
+    pub fee_config: Option<Account<'info, ProtocolFeeConfig>>,
 }
 
 pub fn handler_sync_rewards(ctx: Context<SyncRewards>) -> Result<()> {
@@ -56,9 +63,25 @@ pub fn handler_sync_rewards(ctx: Context<SyncRewards>) -> Result<()> {
         .try_into()
         .map_err(|_| StakingError::MathOverflow)?;
 
+    // Calculate protocol fee (stays in vault as pending, collected separately)
+    let protocol_fee: u64 = match &ctx.accounts.fee_config {
+        Some(fc) if fc.reward_fee_bps > 0 && !pool.fee_exempt() => {
+            (new_rewards as u128)
+                .checked_mul(fc.reward_fee_bps as u128)
+                .ok_or(StakingError::MathOverflow)?
+                .checked_div(10_000)
+                .ok_or(StakingError::MathOverflow)?
+                .try_into()
+                .map_err(|_| StakingError::MathOverflow)?
+        }
+        _ => 0,
+    };
+
+    let net_rewards = new_rewards.checked_sub(protocol_fee).ok_or(StakingError::MathOverflow)?;
+
     if pool.total_shares > 0 {
-        // Include any previously unallocated rewards
-        let total_to_distribute = (new_rewards as u128)
+        // Distribute net_rewards + any previously unallocated rewards
+        let total_to_distribute = (net_rewards as u128)
             .checked_add(pool.unallocated_rewards as u128)
             .ok_or(StakingError::MathOverflow)?;
 
@@ -76,25 +99,36 @@ pub fn handler_sync_rewards(ctx: Context<SyncRewards>) -> Result<()> {
 
         if pool.unallocated_rewards > 0 {
             msg!(
-                "sync_rewards: distributing {} unallocated + {} new lamports",
+                "sync_rewards: distributing {} unallocated + {} net new lamports",
                 pool.unallocated_rewards,
-                new_rewards
+                net_rewards
             );
             pool.unallocated_rewards = 0;
         }
     } else {
-        // No stakers -- park in unallocated_rewards for later distribution
+        // No stakers -- park net in unallocated_rewards for later distribution
         pool.unallocated_rewards = pool.unallocated_rewards
-            .checked_add(new_rewards)
+            .checked_add(net_rewards)
             .ok_or(StakingError::MathOverflow)?;
 
         msg!(
             "sync_rewards: no stakers, adding {} lamports to unallocated_rewards (total: {})",
-            new_rewards,
+            net_rewards,
             pool.unallocated_rewards
         );
     }
 
+    // Accumulate pending fees in pool.reserved[0] and lifetime in pool.reserved[1]
+    if protocol_fee > 0 {
+        pool.reserved[0] = pool.reserved[0]
+            .checked_add(protocol_fee)
+            .ok_or(StakingError::MathOverflow)?;
+        pool.reserved[1] = pool.reserved[1]
+            .checked_add(protocol_fee)
+            .ok_or(StakingError::MathOverflow)?;
+    }
+
+    // total_rewards_funded tracks FULL new_rewards (fee stays in vault until collection)
     pool.total_rewards_funded = pool.total_rewards_funded
         .checked_add(new_rewards)
         .ok_or(StakingError::MathOverflow)?;
@@ -103,17 +137,18 @@ pub fn handler_sync_rewards(ctx: Context<SyncRewards>) -> Result<()> {
         pool: pool.key(),
         syncer: ctx.accounts.payer.key(),
         new_rewards,
+        protocol_fee,
         new_acc_sol_per_share: pool.acc_sol_per_share,
         total_shares: pool.total_shares,
         timestamp: clock.unix_timestamp,
     });
 
     msg!(
-        "sync_rewards: synced {} lamports for pool {}. acc_sol_per_share: {}, total_shares: {}",
+        "sync_rewards: synced {} lamports (fee: {}, net: {}) for pool {}",
         new_rewards,
+        protocol_fee,
+        net_rewards,
         pool.key(),
-        pool.acc_sol_per_share,
-        pool.total_shares
     );
 
     Ok(())

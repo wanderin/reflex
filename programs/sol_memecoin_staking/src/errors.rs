@@ -67,4 +67,25 @@ pub enum StakingError {
 
     #[msg("Cannot transfer a stake lot to yourself")]
     SelfTransferNotAllowed,
+
+    #[msg("Custom lock duration too short (minimum 60 seconds)")]
+    CustomLockTooShort,
+
+    #[msg("Use Permanent tier for permanent locks, not Custom")]
+    CustomLockPermanentNotAllowed,
+
+    #[msg("Custom tier does not support add_to_lot or merge_lots")]
+    CustomTierNotSupported,
+
+    #[msg("Fee exceeds maximum allowed (10%)")]
+    FeeTooHigh,
+
+    #[msg("Treasury address cannot be default/zero")]
+    InvalidTreasury,
+
+    #[msg("No protocol fees pending for collection")]
+    NoFeesToCollect,
+
+    #[msg("Treasury account does not match fee config")]
+    TreasuryMismatch,
 }

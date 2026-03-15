@@ -77,7 +77,9 @@ pub struct Pool {
     /// The token creator's wallet (authorized to fund rewards for this pool)
     pub creator_wallet: Pubkey,
     
-    /// Reserved for future use (4 slots = 32 bytes)
+    /// Reserved fields repurposed for protocol features:
+    /// [0] = pending_protocol_fees, [1] = total_protocol_fees,
+    /// [2] = custom_multiplier_bps (10000 = 1.0x), [3] = free
     pub reserved: [u64; 4],
 }
 
@@ -88,15 +90,18 @@ impl Pool {
     /// + 8 (unallocated) + 48 (multipliers) + 8 (active_lots) + 8 (total_staked) + 8 (created_at)
     /// + 32 (creator_wallet) + 32 (reserved)
     pub const LEN: usize = 8 + 32 + 32 + 1 + 1 + 1 + 1 + 16 + 16 + 8 + 8 + 8 + (6 * 8) + 8 + 8 + 8 + 32 + (4 * 8);
-    
+
     /// Get the multiplier for a tier (in basis points)
     pub fn get_multiplier(&self, tier: &StakingTier) -> u64 {
-        self.tier_multipliers[tier.index()]
+        match tier {
+            StakingTier::Custom => self.custom_multiplier_bps(),
+            _ => self.tier_multipliers[tier.index()],
+        }
     }
-    
+
     /// Calculate shares for an amount at a given tier using linear scaling
     /// Formula: shares = amount * multiplier / 10000
-    /// 
+    ///
     /// With linear scaling, there is no incentive to split stakes (no Sybil advantage).
     /// Tier multipliers reward longer lock periods (e.g., 20000 = 2.0x for permanent tier).
     /// Returns MathOverflow on overflow instead of silently returning 0.
@@ -109,6 +114,20 @@ impl Pool {
             .ok_or(StakingError::MathOverflow)?;
         Ok(shares)
     }
+
+    /// Pending protocol fees awaiting collection (reserved[0])
+    pub fn pending_protocol_fees(&self) -> u64 { self.reserved[0] }
+
+    /// Lifetime protocol fees collected from this pool (reserved[1])
+    pub fn total_protocol_fees(&self) -> u64 { self.reserved[1] }
+
+    /// Custom tier multiplier in basis points (reserved[2], 10000 = 1.0x).
+    /// Returns 0 for existing pools where reserved[2] was never set —
+    /// safely disables Custom tier (0 shares → ZeroShares rejection).
+    pub fn custom_multiplier_bps(&self) -> u64 { self.reserved[2] }
+
+    /// Whether this pool is exempt from protocol fees (_padding: 0=fees on, 1=exempt)
+    pub fn fee_exempt(&self) -> bool { self._padding == 1 }
 }
 
 /// Individual stake lot - tracks one stake position per user
@@ -175,6 +194,7 @@ impl StakeLot {
             3 => Ok(StakingTier::Week1),
             4 => Ok(StakingTier::Month1),
             5 => Ok(StakingTier::Permanent),
+            6 => Ok(StakingTier::Custom),
             _ => Err(StakingError::InvalidTier.into()),
         }
     }
@@ -187,4 +207,37 @@ impl StakeLot {
         }
         current_time >= self.unlock_at
     }
+}
+
+/// Protocol fee configuration — separate PDA to avoid realloc on existing accounts
+/// PDA seeds: ["fee_config"]
+#[account]
+pub struct ProtocolFeeConfig {
+    /// Authority who can update fee config (synced with program upgrade authority)
+    pub authority: Pubkey,
+
+    /// PDA bump
+    pub bump: u8,
+
+    /// Treasury wallet that receives collected fees
+    pub treasury: Pubkey,
+
+    /// Fee on reward distributions in basis points (250 = 2.5%, max 1000 = 10%)
+    pub reward_fee_bps: u16,
+
+    /// Reserved for future pool creation fee (set to 0)
+    pub pool_creation_fee: u64,
+
+    /// Lifetime total fees collected across all pools
+    pub total_fees_collected: u64,
+
+    /// Reserved for future use
+    pub reserved: [u64; 4],
+}
+
+impl ProtocolFeeConfig {
+    /// 8 (discriminator) + 32 (authority) + 1 (bump) + 32 (treasury)
+    /// + 2 (reward_fee_bps) + 8 (pool_creation_fee) + 8 (total_fees_collected)
+    /// + 32 (reserved)
+    pub const LEN: usize = 8 + 32 + 1 + 32 + 2 + 8 + 8 + (4 * 8);
 }

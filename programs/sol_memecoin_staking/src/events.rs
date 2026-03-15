@@ -30,6 +30,7 @@ pub struct RewardsFunded {
     pub funder: Pubkey,
     pub amount: u64,
     pub distributed_amount: u64,
+    pub protocol_fee: u64,
     pub new_acc_sol_per_share: u128,
     pub total_shares: u128,
     pub timestamp: i64,
@@ -99,6 +100,7 @@ pub struct RewardsSynced {
     pub pool: Pubkey,
     pub syncer: Pubkey,
     pub new_rewards: u64,
+    pub protocol_fee: u64,
     pub new_acc_sol_per_share: u128,
     pub total_shares: u128,
     pub timestamp: i64,
@@ -143,5 +145,42 @@ pub struct StakeLotTransferred {
     pub amount: u64,
     pub shares: u128,
     pub tier: u8,
+    pub timestamp: i64,
+}
+
+/// Emitted when the protocol fee config is initialized
+#[event]
+pub struct FeeConfigInitialized {
+    pub fee_config: Pubkey,
+    pub authority: Pubkey,
+    pub treasury: Pubkey,
+    pub reward_fee_bps: u16,
+    pub timestamp: i64,
+}
+
+/// Emitted when the protocol fee config is updated
+#[event]
+pub struct FeeConfigUpdated {
+    pub fee_config: Pubkey,
+    pub treasury: Pubkey,
+    pub reward_fee_bps: u16,
+    pub timestamp: i64,
+}
+
+/// Emitted when protocol fees are collected from a pool
+#[event]
+pub struct ProtocolFeesCollected {
+    pub pool: Pubkey,
+    pub treasury: Pubkey,
+    pub amount: u64,
+    pub timestamp: i64,
+}
+
+/// Emitted when pool config is updated (fee_exempt, custom_multiplier_bps)
+#[event]
+pub struct PoolConfigUpdated {
+    pub pool: Pubkey,
+    pub fee_exempt: u8,
+    pub custom_multiplier_bps: u64,
     pub timestamp: i64,
 }
