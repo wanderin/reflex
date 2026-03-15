@@ -164,3 +164,63 @@ Our official frontend at rflx.fi only surfaces pools that have been verified by 
 For the reward drain scenario: any user who calls `fund_rewards` or sends SOL directly to a vault address on a pool they did not independently verify is operating outside our official UI. We will add prominent warnings in our documentation advising users to only interact through the official frontend and to verify pool addresses through official channels before funding.
 
 **Status:** Acknowledged — Mitigated at the frontend layer
+
+---
+
+## I-07: `last_claimed_at` Field Is Written But Never Enforced
+
+**Severity:** Informational
+**Status:** Open
+
+### Summary
+
+`StakeLot.last_claimed_at` is set by three instructions but is never read in any security guard. Comments and rationale throughout the code treat it as an active cooldown mechanism, but the actual anti-sandwich enforcement uses `staked_at` exclusively. The field is dead state.
+
+### Detail
+
+`last_claimed_at` is written in:
+- `stake.rs:118` — initialized to stake time
+- `claim.rs:113` — updated after each successful claim
+- `transfer_stake_lot.rs:83` — reset to `clock.unix_timestamp` with the comment:
+  ```rust
+  new_lot.last_claimed_at = clock.unix_timestamp; // Reset 60s anti-sandwich cooldown
+  ```
+
+It is read in zero security-relevant locations. The actual anti-sandwich guard (`claim.rs:56`) reads `staked_at`:
+
+```rust
+require!(clock.unix_timestamp >= stake_lot.staked_at + min_stake_age);
+```
+
+This creates two misleading code patterns:
+
+1. `transfer_stake_lot.rs:83` — the comment claims this line "resets the 60s anti-sandwich cooldown." It does not. Resetting `last_claimed_at` has no effect on any guard.
+
+2. `transfer_stake_lot.rs:58-62` — the self-transfer guard cites cooldown-reset abuse as its rationale:
+   ```rust
+   // Prevent self-transfer (could abuse cooldown reset)
+   require!(owner != new_owner, StakingError::SelfTransferNotAllowed);
+   ```
+   The mechanism it's protecting against is not enforced anywhere in the code.
+
+### Impact
+
+No funds are at risk under the current code. The concern is forward-looking:
+
+- A developer reading the field name, the comment, and the self-transfer guard rationale will reasonably conclude that `last_claimed_at` enforces a per-claim cooldown. It does not.
+- Off-chain tooling or indexers that consume `last_claimed_at` to determine claim eligibility will produce incorrect results.
+- A future instruction that relies on `last_claimed_at` as a security gate will ship with a broken assumption.
+
+### Recommendation
+
+Either enforce the field or remove it. Two options:
+
+**Option A — Enforce it:** Update the claim guard to use `last_claimed_at` for rate-limiting repeat claims (in addition to or instead of `staked_at`):
+```rust
+require!(
+    clock.unix_timestamp >= stake_lot.last_claimed_at + min_stake_age,
+    StakingError::ClaimTooEarly
+);
+```
+
+**Option B — Remove it:** Delete `last_claimed_at` from `StakeLot`, remove all writes, and update the comments and self-transfer guard rationale to reflect the actual guard mechanism (`staked_at`). Note that removing the field changes the account layout and would break deserialization of existing accounts in production.
