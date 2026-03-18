@@ -246,3 +246,154 @@ Accepted risk. This scenario is inherent to the permissionless design and only e
 `fund_rewards` already blocks funding when `total_shares == 0`, and the 60-second anti-sandwich guard in `claim` prevents single-block sandwich attacks. The remaining attack surface is a deliberate first-staker advantage: someone must be the first to stake and trigger distribution of accumulated SOL. Adding a minimum share threshold would add complexity without meaningfully changing the outcome — a determined attacker can always meet a threshold by staking more.
 
 For pump.fun pools, creator fees that arrive before stakers are parked in `unallocated_rewards` and distributed to the first stakers. We consider this acceptable behavior and will document it explicitly.
+
+---
+
+## M-05: Protocol Fee Bypass via Optional `fee_config` in `fund_rewards`
+
+**Severity:** Medium
+**Status:** Open
+
+### Summary
+
+`fund_rewards` declares `fee_config` as `Option<Account<'info, ProtocolFeeConfig>>`. When the account is omitted by the caller, `protocol_fee` is unconditionally set to zero. There is no on-chain mechanism to require inclusion of `fee_config` once it has been initialized, creating a permanent and undetectable fee bypass for all authorized funders.
+
+### Vulnerability Detail
+
+The account struct marks `fee_config` as optional with no conditional requirement:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/fund_rewards.rs:47-51
+
+/// Optional: protocol fee config. If absent, no fee is taken.
+/// Zero-downtime deploy: existing callers pass None until fee_config is initialized.
+#[account(seeds = [b"fee_config"], bump = fee_config.bump)]
+pub fee_config: Option<Account<'info, ProtocolFeeConfig>>,
+```
+
+In the handler, when the account is absent, the fee resolves to zero via the wildcard arm:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/fund_rewards.rs:69-85
+
+let protocol_fee: u64 = match &ctx.accounts.fee_config {
+    Some(fc) if fc.reward_fee_bps > 0 && !pool.fee_exempt() => {
+        // fee computed here
+    }
+    _ => 0,  // None, zero bps, or fee-exempt all collapse here
+};
+```
+
+The rationale ("zero-downtime deploy: existing callers pass None until fee_config is initialized") addresses the bootstrap window but provides no enforcement path afterwards. Once `fee_config` is deployed, any authorized caller retains the ability to omit it on every subsequent call.
+
+Only `config.authority` and `pool.creator_wallet` can call `fund_rewards`. These are the exclusive parties who fund rewards, meaning the bypass is available to 100% of funders on 100% of funding events.
+
+**Trigger sequence:**
+1. Protocol initializes `fee_config` with `reward_fee_bps = 250` (2.5%) and treasury `T`
+2. `creator_wallet` constructs a `fund_rewards` tx and intentionally excludes the `fee_config` account
+3. Accounts passed: `[funder, config, pool, sol_vault, system_program]` — `fee_config = None`
+4. Handler: `ctx.accounts.fee_config` is `None` → `protocol_fee = 0`
+5. Full amount enters `sol_vault`; all distributed to stakers
+6. Treasury `T` receives 0 lamports (entitled to 2.5%)
+7. Step 2–6 can be repeated on every `fund_rewards` call indefinitely
+
+### Impact
+
+The protocol earns zero fee revenue on any `fund_rewards` call where the caller omits `fee_config`. Since all authorized funders have this option permanently, the fee system on the `fund_rewards` path is opt-in by the funder rather than enforced by the protocol. No funds are stolen from users — the bypassed fee simply flows to stakers instead of the treasury.
+
+### Recommendation
+
+Add an on-chain check that requires `fee_config` if the PDA has already been initialized. One approach is to derive the `fee_config` PDA address deterministically and require it when the account exists:
+
+```rust
+// Require fee_config if the PDA is already initialized
+if let Some(fc) = &ctx.accounts.fee_config {
+    // existing fee logic
+} else {
+    // Check that the fee_config PDA does not exist on-chain
+    // If it does, the caller is bypassing fees intentionally
+    require!(
+        ctx.accounts.fee_config.is_none(),
+        StakingError::FeeConfigRequired
+    );
+}
+```
+
+A simpler alternative: make `fee_config` a required account and gate the fee computation on `reward_fee_bps > 0`. This removes the opt-in nature and forces callers to always include the account after deployment.
+
+---
+
+## M-06: Permissionless Fee Bypass in `sync_rewards`
+
+**Severity:** Medium
+**Status:** Open
+
+### Summary
+
+`sync_rewards` is permissionless — any account can call it — and also accepts `fee_config` as `Option`. When the account is omitted, no protocol fee is charged on externally-received SOL. Since stakers directly benefit from higher rewards (no fee deducted), they have a natural economic incentive to call `sync_rewards` without `fee_config`, routing 100% of external revenue to themselves at the protocol's expense.
+
+### Vulnerability Detail
+
+The same optional pattern as M-05 appears in `sync_rewards`, but the attack surface is wider because there is no authorization gate:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/sync_rewards.rs:30-34
+
+/// Optional: protocol fee config. If absent, no fee is taken.
+#[account(seeds = [b"fee_config"], bump = fee_config.bump)]
+pub fee_config: Option<Account<'info, ProtocolFeeConfig>>,
+```
+
+When `fee_config` is absent:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/sync_rewards.rs:67-78
+
+let protocol_fee: u64 = match &ctx.accounts.fee_config {
+    Some(fc) if fc.reward_fee_bps > 0 && !pool.fee_exempt() => {
+        // fee computed here
+    }
+    _ => 0,  // None → full amount to stakers
+};
+```
+
+`sync_rewards` is the designated path for distributing externally-received SOL (e.g., pump.fun creator fees sent directly to the `sol_vault` PDA). The `sol_vault` is a system-owned PDA that accepts any system transfer with no program involvement, so external SOL accumulates without the protocol having any control over the deposit event.
+
+**Comparison with M-05:**
+
+| | `fund_rewards` bypass (M-05) | `sync_rewards` bypass (M-06) |
+|---|---|---|
+| Who can exploit | `config.authority`, `creator_wallet` | **Any Solana account** |
+| Incentive to exploit | Save 2.5% on reward funding | Get 2.5% more rewards |
+| Detection | Off-chain monitoring of accounts list | Off-chain monitoring only |
+
+**Trigger sequence:**
+1. pump.fun sends 100 SOL in creator fees directly to `sol_vault` (system transfer — no program involved)
+2. `pool.total_shares > 0` — stakers are present
+3. Any staker (or a bot watching for external vault deposits) calls `sync_rewards` without `fee_config`
+4. Handler: `fee_config = None` → `protocol_fee = 0`
+5. `new_rewards = 100 SOL` — fully distributed via `acc_sol_per_share` increase
+6. `pool.reserved[0]` is not incremented; no pending fees are recorded
+7. Treasury receives 0 lamports (entitled to 2.5 SOL)
+
+### Impact
+
+Every unit of SOL that arrives at a `sol_vault` via external transfer (pump.fun fees, direct donations, etc.) can be distributed to stakers at zero protocol cost, permanently, by any caller. The protocol has no mechanism to enforce fee collection on this revenue path once stakers have economic incentive to bypass it.
+
+No user funds are stolen — the bypassed fee flows to stakers proportionally. The protocol loses its fee revenue on all external-SOL events.
+
+### Recommendation
+
+Same root cause as M-05. The fix must prevent callers from omitting `fee_config` once it has been initialized. For `sync_rewards`, since the call is permissionless, a PDA existence check in the handler is the most practical approach:
+
+```rust
+// If fee_config PDA exists on-chain, require it to be passed
+// (derive and compare the expected PDA address)
+let expected_fee_config = Pubkey::find_program_address(
+    &[b"fee_config"],
+    ctx.program_id
+).0;
+// If fee_config account exists at this address, it must be provided
+```
+
+Alternatively, restructure `sync_rewards` to have two variants — one for pre-fee-config deployment (no fee) and one for post-deployment (fee required) — controlled by a program-level flag set when `initialize_fee_config` is called.

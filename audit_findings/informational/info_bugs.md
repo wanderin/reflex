@@ -234,3 +234,138 @@ Correct observation — `last_claimed_at` is not enforced on-chain. We intention
 **Comment fix applied:** The misleading comment in `transfer_stake_lot.rs` ("Reset 60s anti-sandwich cooldown") has been corrected to "Reset for analytics tracking" to accurately reflect the field's purpose. The anti-sandwich guard uses `staked_at` exclusively, as the auditor correctly identified.
 
 Removing the field is not viable due to account layout stability (same reasoning as I-05). We will not add on-chain enforcement for `last_claimed_at` — the 60-second anti-sandwich guard via `staked_at` is sufficient and is now correctly applied across `merge_lots` (M-02) and `add_to_lot` (M-03).
+
+---
+
+## I-08: `pool.reserved[1]` (`total_protocol_fees`) Undercounts Lifetime Fees for `fund_rewards` Pools
+
+**Severity:** Informational
+**Status:** Open
+
+### Summary
+
+`pool.reserved[1]` is intended to track the lifetime total of protocol fees collected from a pool. However, it is only ever incremented by `sync_rewards`. Fees taken via `fund_rewards` — which go directly to treasury without touching the vault — are never reflected in this field, making it an inaccurate accounting record for any pool that uses `fund_rewards`.
+
+### Detail
+
+`pool.reserved[1]` (accessed via `pool.total_protocol_fees()`) is incremented in exactly one place:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/sync_rewards.rs:126-129
+
+pool.reserved[1] = pool.reserved[1]
+    .checked_add(protocol_fee)
+    .ok_or(StakingError::MathOverflow)?;
+```
+
+In `fund_rewards`, the protocol fee is computed and transferred directly to treasury. `reserved[1]` is never touched:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/fund_rewards.rs:100-111
+
+// Transfer fee directly to treasury (fee never enters vault)
+if protocol_fee > 0 {
+    system_program::transfer(fee_cpi, protocol_fee)?;
+    // reserved[1] is NOT updated here
+}
+```
+
+For any pool that uses `fund_rewards`, `pool.total_protocol_fees()` will always return `0` (or only the fees from `sync_rewards` calls, if both paths are used). The true lifetime fee total for the pool is unquantifiable from on-chain state alone.
+
+### Impact
+
+No funds are affected. This is a data accuracy issue: off-chain indexers, dashboards, or analytics tools that read `pool.reserved[1]` to report per-pool fee revenue will produce incorrect (understated) figures for `fund_rewards` pools. `ProtocolFeeConfig.total_fees_collected` (the program-wide counter) has the same gap — it is only incremented in `collect_protocol_fees`, which itself is only reachable via the `sync_rewards` path (see L-04).
+
+### Recommendation
+
+In `handler_fund_rewards`, add the same `reserved[1]` increment that `sync_rewards` performs:
+
+```rust
+if protocol_fee > 0 {
+    // existing treasury transfer ...
+
+    // Mirror the accounting sync_rewards performs
+    pool.reserved[1] = pool.reserved[1]
+        .checked_add(protocol_fee)
+        .ok_or(StakingError::MathOverflow)?;
+}
+```
+
+This keeps the per-pool lifetime fee counter accurate regardless of which funding path is used.
+
+---
+
+## I-09: `fee_config.authority` Is Dead State — Diverges from `config.authority` on Rotation
+
+**Severity:** Informational
+**Status:** Open
+
+### Summary
+
+`ProtocolFeeConfig.authority` is set to `config.authority` at initialization time but is never updated if `config.authority` is subsequently rotated via `update_authority`. It is also never read in any authorization check — all auth logic reads `config.authority` directly. The field is dead state that diverges silently from the true governance authority after any rotation.
+
+### Detail
+
+The field is written exactly once, at initialization:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/fee_config.rs:102
+
+fee_config.authority = ctx.accounts.config.authority;
+```
+
+Every authorization check in `fee_config.rs` bypasses it and reads `ProgramConfig.authority` directly:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/fee_config.rs:33-44
+
+fn require_authority_or_upgrade(
+    signer: &Pubkey,
+    config_authority: &Pubkey,  // always passed from config.authority, not fee_config.authority
+    program_data: &AccountInfo,
+) -> Result<()> { ... }
+
+// Called as:
+require_authority_or_upgrade(
+    &ctx.accounts.authority.key(),
+    &ctx.accounts.config.authority,  // ← config, not fee_config
+    &ctx.accounts.program_data.to_account_info(),
+)?;
+```
+
+`update_authority` only updates `ProgramConfig.authority`:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/config.rs
+
+config.authority = new_authority;
+// fee_config.authority is NOT updated — no mechanism exists to update it
+```
+
+After an authority rotation:
+- `config.authority` = new authority (correct, enforced)
+- `fee_config.authority` = old authority (stale, never enforced)
+
+### Impact
+
+No funds are at risk and no authorization check is weakened under the current code — all security-critical paths read `config.authority`. The concerns are forward-looking:
+
+1. **Stale governance data:** On-chain explorers and indexers reading `fee_config.authority` to determine who governs the fee system will display the wrong key after any rotation.
+2. **Future regression risk:** If a future instruction is added that reads `fee_config.authority` for authorization (the field name strongly implies this intent), it will silently use a stale, potentially no-longer-trusted key.
+3. **Audit surface:** The field creates confusion for future auditors who must trace why two authority fields exist and which one is actually enforced.
+
+### Recommendation
+
+Choose one of:
+
+**Option A — Remove the field.** Since `fee_config.authority` is never read, remove it from `ProtocolFeeConfig` and its initialization. Note: this changes the account layout and would break deserialization of any already-deployed `fee_config` account. Consider a migration or realloc if the account is already live.
+
+**Option B — Sync on rotation.** Add `fee_config` as a mutable account to `UpdateAuthority` and update it alongside `config.authority`:
+
+```rust
+// In update_authority handler:
+config.authority = new_authority;
+fee_config.authority = new_authority;  // keep in sync
+```
+
+**Option C — Document as analytics-only.** If the field is retained for off-chain tooling, add a comment explicitly stating it is not enforced on-chain and may be stale — matching the pattern used for `last_claimed_at` (I-07).
