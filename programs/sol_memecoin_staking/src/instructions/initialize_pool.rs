@@ -238,8 +238,8 @@ pub fn handler_initialize_pool(
     pool.created_at = clock.unix_timestamp;
     pool.creator_wallet = creator_wallet;
 
-    // New pools: disable legacy tiers (0-4), keep Permanent (5), enable Custom via reserved[2].
-    // Legacy tiers get 0 multiplier → 0 shares → ZeroShares rejection on stake.
+    // New pools: disable fixed tiers (0-4), keep Permanent (5), enable Custom via reserved[2].
+    // Disabled tiers get 0 multiplier → 0 shares → ZeroShares rejection on stake.
     // Existing pools are unaffected (they keep their original multipliers).
     pool.tier_multipliers[0] = 0; // Flexible: disabled
     pool.tier_multipliers[1] = 0; // 24h: disabled

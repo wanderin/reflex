@@ -50,15 +50,15 @@ pub const SCALE: u128 = 1_000_000_000_000;
 /// Staking tier enum with lock durations
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum StakingTier {
-    /// 1 minute minimum lock (prevents sandwich attacks) — legacy
+    /// 1 minute minimum lock (prevents sandwich attacks) — disabled on new pools
     Flexible,
-    /// 24 hour lock — legacy
+    /// 24 hour lock — disabled on new pools
     Hours24,
-    /// 72 hour lock — legacy
+    /// 72 hour lock — disabled on new pools
     Hours72,
-    /// 1 week lock — legacy
+    /// 1 week lock — disabled on new pools
     Week1,
-    /// 1 month lock (30 days) — legacy
+    /// 1 month lock (30 days) — disabled on new pools
     Month1,
     /// Permanent lock - cannot unstake ever (2.0x multiplier)
     Permanent,
