@@ -231,6 +231,7 @@ pub fn handler_set_pool_config(
     let clock = Clock::get()?;
 
     if let Some(exempt) = fee_exempt {
+        require!(exempt == 0 || exempt == 1, StakingError::InvalidFeeExempt);
         pool._padding = exempt;
     }
 

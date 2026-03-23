@@ -118,7 +118,7 @@ Correct observation — the field is always `true` for existing accounts since l
 ## I-06: Permissionless Pool Creation Enables Fake Pool Phishing
 
 **Severity:** Informational
-**Status:** Open
+**Status:** Acknowledged — Mitigated at frontend layer
 
 ### Summary
 Any user can create a staking pool for any SPL token mint. There is no on-chain validation that the token being pooled is a legitimate or recognized asset. This enables an attacker to create a pool for a fake copycat token and trick users into staking in the wrong pool.
@@ -240,7 +240,7 @@ Removing the field is not viable due to account layout stability (same reasoning
 ## I-08: `pool.reserved[1]` (`total_protocol_fees`) Undercounts Lifetime Fees for `fund_rewards` Pools
 
 **Severity:** Informational
-**Status:** Open
+**Status:** Fixed
 
 ### Summary
 
@@ -295,10 +295,16 @@ This keeps the per-pool lifetime fee counter accurate regardless of which fundin
 
 ---
 
+### Team Response
+
+**Fix applied:** `fund_rewards` now increments `pool.reserved[1]` when a protocol fee is charged (same pattern as `sync_rewards`). Combined with the L-05 fix (`fee_config.total_fees_collected` also updated), both per-pool and program-wide lifetime fee counters are now accurate across both funding paths.
+
+---
+
 ## I-09: `fee_config.authority` Is Dead State — Diverges from `config.authority` on Rotation
 
 **Severity:** Informational
-**Status:** Open
+**Status:** Fixed
 
 ### Summary
 
@@ -369,3 +375,9 @@ fee_config.authority = new_authority;  // keep in sync
 ```
 
 **Option C — Document as analytics-only.** If the field is retained for off-chain tooling, add a comment explicitly stating it is not enforced on-chain and may be stale — matching the pattern used for `last_claimed_at` (I-07).
+
+---
+
+### Team Response
+
+**Fix applied (Option B):** `fee_config` is now an optional `mut` account in `UpdateAuthority`. When provided, `fee_config.authority` is synced to `new_authority` alongside `config.authority`. Optional because `fee_config` may not be initialized yet on first authority rotation. After this fix, `fee_config.authority` stays in sync with `config.authority` on every rotation — no more stale state.

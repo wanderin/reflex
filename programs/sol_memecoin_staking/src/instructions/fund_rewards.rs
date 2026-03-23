@@ -42,18 +42,21 @@ pub struct FundRewards<'info> {
     )]
     pub sol_vault: SystemAccount<'info>,
 
-    /// Optional: protocol fee config. If absent, no fee is taken.
-    /// Zero-downtime deploy: existing callers pass None until fee_config is initialized.
+    /// Protocol fee config — must be initialized before calling fund_rewards.
     #[account(
+        mut,
         seeds = [b"fee_config"],
         bump = fee_config.bump,
     )]
-    pub fee_config: Option<Account<'info, ProtocolFeeConfig>>,
+    pub fee_config: Box<Account<'info, ProtocolFeeConfig>>,
 
-    /// Optional: treasury to receive fee (required if fee_config is provided)
-    /// CHECK: Validated against fee_config.treasury if present
-    #[account(mut)]
-    pub treasury: Option<SystemAccount<'info>>,
+    /// Treasury receives the protocol fee
+    /// CHECK: Validated against fee_config.treasury
+    #[account(
+        mut,
+        constraint = treasury.key() == fee_config.treasury @ StakingError::TreasuryMismatch,
+    )]
+    pub treasury: SystemAccount<'info>,
 
     pub system_program: Program<'info, System>,
 }
@@ -65,23 +68,17 @@ pub fn handler_fund_rewards(ctx: Context<FundRewards>, amount: u64) -> Result<()
     require!(amount > 0, StakingError::InvalidAmount);
     require!(pool.total_shares > 0, StakingError::NoStakers);
 
-    // Calculate protocol fee (if fee_config present, fee > 0, and pool not exempt)
-    let protocol_fee: u64 = match &ctx.accounts.fee_config {
-        Some(fc) if fc.reward_fee_bps > 0 && !pool.fee_exempt() => {
-            // Validate treasury matches
-            let treasury = ctx.accounts.treasury.as_ref()
-                .ok_or(StakingError::TreasuryMismatch)?;
-            require!(treasury.key() == fc.treasury, StakingError::TreasuryMismatch);
-
-            (amount as u128)
-                .checked_mul(fc.reward_fee_bps as u128)
-                .ok_or(StakingError::MathOverflow)?
-                .checked_div(10_000)
-                .ok_or(StakingError::MathOverflow)?
-                .try_into()
-                .map_err(|_| StakingError::MathOverflow)?
-        }
-        _ => 0,
+    // Calculate protocol fee
+    let protocol_fee: u64 = if ctx.accounts.fee_config.reward_fee_bps > 0 && !pool.fee_exempt() {
+        (amount as u128)
+            .checked_mul(ctx.accounts.fee_config.reward_fee_bps as u128)
+            .ok_or(StakingError::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(StakingError::MathOverflow)?
+            .try_into()
+            .map_err(|_| StakingError::MathOverflow)?
+    } else {
+        0
     };
 
     let net_amount = amount.checked_sub(protocol_fee).ok_or(StakingError::MathOverflow)?;
@@ -99,15 +96,25 @@ pub fn handler_fund_rewards(ctx: Context<FundRewards>, amount: u64) -> Result<()
 
     // Transfer fee directly to treasury (fee never enters vault)
     if protocol_fee > 0 {
-        let treasury = ctx.accounts.treasury.as_ref().unwrap();
         let fee_cpi = CpiContext::new(
             ctx.accounts.system_program.to_account_info(),
             Transfer {
                 from: ctx.accounts.funder.to_account_info(),
-                to: treasury.to_account_info(),
+                to: ctx.accounts.treasury.to_account_info(),
             },
         );
         system_program::transfer(fee_cpi, protocol_fee)?;
+
+        // Per-pool lifetime fee counter
+        pool.reserved[1] = pool.reserved[1]
+            .checked_add(protocol_fee)
+            .ok_or(StakingError::MathOverflow)?;
+
+        // Global lifetime fee counter
+        let fee_config = &mut ctx.accounts.fee_config;
+        fee_config.total_fees_collected = fee_config.total_fees_collected
+            .checked_add(protocol_fee)
+            .ok_or(StakingError::MathOverflow)?;
     }
 
     // Distribute net_amount + any unallocated rewards
@@ -141,6 +148,9 @@ pub fn handler_fund_rewards(ctx: Context<FundRewards>, amount: u64) -> Result<()
     }
 
     // Only count net amount as funded (fee was never in vault)
+    // Note: pool.reserved[0] (pending_protocol_fees) is NOT updated here because
+    // fund_rewards sends fees directly to treasury — they never enter the vault.
+    // collect_protocol_fees only applies to the sync_rewards path.
     pool.total_rewards_funded = pool.total_rewards_funded
         .checked_add(net_amount)
         .ok_or(StakingError::MathOverflow)?;

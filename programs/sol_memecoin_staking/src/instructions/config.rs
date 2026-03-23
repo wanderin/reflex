@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::state::ProgramConfig;
+use crate::state::{ProgramConfig, ProtocolFeeConfig};
 use crate::errors::StakingError;
 use crate::events::{ConfigInitialized, AuthorityUpdated, PoolCreatorUpdated};
 use crate::ID;
@@ -107,7 +107,7 @@ pub fn handler_initialize_config(ctx: Context<InitializeConfig>) -> Result<()> {
 
 #[derive(Accounts)]
 pub struct UpdateAuthority<'info> {
-    /// Either the current config.authority or the program upgrade authority (fixes H-01)
+    /// Either the current config.authority or the program upgrade authority
     pub authority: Signer<'info>,
 
     /// The config PDA
@@ -132,6 +132,15 @@ pub struct UpdateAuthority<'info> {
         constraint = program_data.key() == get_program_data_address(&program.key()) @ StakingError::Unauthorized,
     )]
     pub program_data: UncheckedAccount<'info>,
+
+    /// Optional: fee config PDA. If provided, its authority is synced on rotation.
+    /// Optional because fee_config may not be initialized yet on first authority rotation.
+    #[account(
+        mut,
+        seeds = [b"fee_config"],
+        bump = fee_config.bump,
+    )]
+    pub fee_config: Option<Account<'info, ProtocolFeeConfig>>,
 }
 
 /// Update the program authority. Callable by config.authority OR upgrade authority.
@@ -141,7 +150,7 @@ pub struct UpdateAuthority<'info> {
 /// then call this to sync config.authority.
 ///
 /// The upgrade authority can call this directly if the old config.authority key is lost,
-/// preventing permanent administrative lockout (fixes H-01).
+/// preventing permanent administrative lockout.
 pub fn handler_update_authority(
     ctx: Context<UpdateAuthority>,
     new_authority: Pubkey,
@@ -170,7 +179,7 @@ pub fn handler_update_authority(
     let upgrade_authority = Pubkey::try_from(&program_data[13..45])
         .map_err(|_| StakingError::Unauthorized)?;
 
-    // Signer must be either config.authority or upgrade_authority (fixes H-01)
+    // Signer must be either config.authority or upgrade_authority
     require!(
         ctx.accounts.authority.key() == config.authority
             || ctx.accounts.authority.key() == upgrade_authority,
@@ -186,6 +195,11 @@ pub fn handler_update_authority(
     let old_authority = config.authority;
     config.authority = new_authority;
 
+    // Keep fee_config.authority in sync if the account was provided
+    if let Some(fee_config) = &mut ctx.accounts.fee_config {
+        fee_config.authority = new_authority;
+    }
+
     emit!(AuthorityUpdated {
         config: config.key(),
         old_authority,
@@ -199,7 +213,7 @@ pub fn handler_update_authority(
 
 #[derive(Accounts)]
 pub struct SetPoolCreator<'info> {
-    /// Either the current config.authority or the program upgrade authority (fixes M-01)
+    /// Either the current config.authority or the program upgrade authority
     pub authority: Signer<'info>,
 
     /// The config PDA
@@ -227,7 +241,7 @@ pub struct SetPoolCreator<'info> {
 }
 
 /// Set or update the pool_creator role.
-/// Callable by config.authority OR upgrade authority (fixes M-01 deadlock).
+/// Callable by config.authority OR upgrade authority.
 /// The pool_creator can only create pools - no other admin powers.
 ///
 /// # Arguments
@@ -251,7 +265,7 @@ pub fn handler_set_pool_creator(
     let upgrade_authority = Pubkey::try_from(&program_data[13..45])
         .map_err(|_| StakingError::Unauthorized)?;
 
-    // Signer must be either config.authority or upgrade_authority (fixes M-01)
+    // Signer must be either config.authority or upgrade_authority
     let config = &mut ctx.accounts.config;
     require!(
         ctx.accounts.authority.key() == config.authority

@@ -252,7 +252,7 @@ For pump.fun pools, creator fees that arrive before stakers are parked in `unall
 ## M-05: Protocol Fee Bypass via Optional `fee_config` in `fund_rewards`
 
 **Severity:** Medium
-**Status:** Open
+**Status:** Fixed
 
 ### Summary
 
@@ -323,10 +323,16 @@ A simpler alternative: make `fee_config` a required account and gate the fee com
 
 ---
 
+### Team Response
+
+**Fix applied:** `fee_config` is now a required account (not `Option`) in `FundRewards`. `treasury` is also required with an account-level constraint validating `treasury.key() == fee_config.treasury`. The `Option`/`match` pattern has been replaced with direct access. `fee_config` is marked `mut` so that `total_fees_collected` and `pool.reserved[1]` (lifetime per-pool fee counter) are correctly updated when fees are charged — addressing L-04, L-05, and I-08 simultaneously. The zero-downtime deploy concern is moot since `fee_config` is already initialized on mainnet. New deployments must call `initialize_fee_config` before `fund_rewards`.
+
+---
+
 ## M-06: Permissionless Fee Bypass in `sync_rewards`
 
 **Severity:** Medium
-**Status:** Open
+**Status:** Fixed
 
 ### Summary
 
@@ -397,3 +403,9 @@ let expected_fee_config = Pubkey::find_program_address(
 ```
 
 Alternatively, restructure `sync_rewards` to have two variants — one for pre-fee-config deployment (no fee) and one for post-deployment (fee required) — controlled by a program-level flag set when `initialize_fee_config` is called.
+
+---
+
+### Team Response
+
+**Fix applied:** Same approach as M-05 — `fee_config` is now a required account (not `Option`) in `SyncRewards`. The `match` pattern has been replaced with direct access to `fee_config.reward_fee_bps`. `fee_config` is not `mut` in `sync_rewards` because fees are accumulated in `pool.reserved[0]` and `pool.reserved[1]` (pool is already `mut`), and `fee_config.total_fees_collected` is updated later in `collect_protocol_fees`. Any caller of `sync_rewards` must now pass the `fee_config` PDA, eliminating the economic incentive to bypass fees.

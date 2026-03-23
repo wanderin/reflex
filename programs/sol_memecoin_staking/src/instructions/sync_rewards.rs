@@ -26,12 +26,12 @@ pub struct SyncRewards<'info> {
     )]
     pub sol_vault: SystemAccount<'info>,
 
-    /// Optional: protocol fee config. If absent, no fee is taken.
+    /// Protocol fee config — required for fee enforcement.
     #[account(
         seeds = [b"fee_config"],
         bump = fee_config.bump,
     )]
-    pub fee_config: Option<Account<'info, ProtocolFeeConfig>>,
+    pub fee_config: Box<Account<'info, ProtocolFeeConfig>>,
 }
 
 pub fn handler_sync_rewards(ctx: Context<SyncRewards>) -> Result<()> {
@@ -64,17 +64,17 @@ pub fn handler_sync_rewards(ctx: Context<SyncRewards>) -> Result<()> {
         .map_err(|_| StakingError::MathOverflow)?;
 
     // Calculate protocol fee (stays in vault as pending, collected separately)
-    let protocol_fee: u64 = match &ctx.accounts.fee_config {
-        Some(fc) if fc.reward_fee_bps > 0 && !pool.fee_exempt() => {
-            (new_rewards as u128)
-                .checked_mul(fc.reward_fee_bps as u128)
-                .ok_or(StakingError::MathOverflow)?
-                .checked_div(10_000)
-                .ok_or(StakingError::MathOverflow)?
-                .try_into()
-                .map_err(|_| StakingError::MathOverflow)?
-        }
-        _ => 0,
+    // fee_config is required — callers cannot bypass fees
+    let protocol_fee: u64 = if ctx.accounts.fee_config.reward_fee_bps > 0 && !pool.fee_exempt() {
+        (new_rewards as u128)
+            .checked_mul(ctx.accounts.fee_config.reward_fee_bps as u128)
+            .ok_or(StakingError::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(StakingError::MathOverflow)?
+            .try_into()
+            .map_err(|_| StakingError::MathOverflow)?
+    } else {
+        0
     };
 
     let net_rewards = new_rewards.checked_sub(protocol_fee).ok_or(StakingError::MathOverflow)?;

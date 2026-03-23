@@ -105,7 +105,7 @@ pub fn handler_add_to_lot(ctx: Context<AddToLot>, amount: u64) -> Result<()> {
     };
     stake_lot.unlock_at = stake_lot.unlock_at.max(new_unlock);
 
-    // Anti-sandwich: reset claim cooldown since new tokens entered the lot (fixes M-03)
+    // Anti-sandwich: reset claim cooldown since new tokens entered the lot
     stake_lot.staked_at = clock.unix_timestamp;
 
     pool.total_shares = pool.total_shares

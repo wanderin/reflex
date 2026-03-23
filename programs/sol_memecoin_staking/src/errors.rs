@@ -88,4 +88,7 @@ pub enum StakingError {
 
     #[msg("Treasury account does not match fee config")]
     TreasuryMismatch,
+
+    #[msg("Invalid fee_exempt value - must be 0 or 1")]
+    InvalidFeeExempt,
 }

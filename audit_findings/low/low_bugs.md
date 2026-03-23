@@ -83,7 +83,7 @@ We intentionally leave ordering flexible for trusted roles because some pools ma
 ## L-03: Missing Validation on `fee_exempt` Input Allows Silent Misconfiguration
 
 **Severity:** Low
-**Status:** Open
+**Status:** Fixed
 
 ### Summary
 
@@ -143,10 +143,16 @@ Alternatively, change the parameter type from `Option<u8>` to `Option<bool>` and
 
 ---
 
+### Team Response
+
+**Fix applied:** Added `require!(exempt == 0 || exempt == 1, StakingError::InvalidFeeExempt)` before writing `pool._padding`. The new `InvalidFeeExempt` error variant provides a clear message. Values outside {0, 1} now revert the transaction instead of silently failing to grant exemption.
+
+---
+
 ## L-04: `collect_protocol_fees` Is Silently Broken for Pools Using `fund_rewards`
 
 **Severity:** Low
-**Status:** Open
+**Status:** Fixed
 
 ### Summary
 
@@ -206,10 +212,16 @@ Align the fee accounting in `fund_rewards` with the `sync_rewards` model by accu
 
 ---
 
+### Team Response
+
+**Fix applied:** `fund_rewards` now updates `pool.reserved[1]` (lifetime per-pool fee counter) and `fee_config.total_fees_collected` (global counter) when a protocol fee is charged. `pool.reserved[0]` (pending fees) is intentionally NOT updated because `fund_rewards` sends fees directly to treasury — they never enter the vault. `collect_protocol_fees` correctly only operates on the `sync_rewards` path where fees accumulate in the vault. The two paths now have consistent lifetime accounting while maintaining their distinct settlement models.
+
+---
+
 ## L-05: `fee_config.total_fees_collected` Under-Reports Actual Protocol Revenue
 
 **Severity:** Low
-**Status:** Open
+**Status:** Fixed
 
 ### Summary
 
@@ -267,3 +279,9 @@ if protocol_fee > 0 {
 ```
 
 Apply the same fix to `pool.reserved[1]` as recommended in I-08 to make both per-pool and program-wide counters consistent across both funding paths.
+
+---
+
+### Team Response
+
+**Fix applied:** `fee_config` is now required and `mut` in `FundRewards`. When `protocol_fee > 0`, the handler increments `fee_config.total_fees_collected` alongside `pool.reserved[1]`. Both the per-pool and program-wide lifetime counters are now accurate across both `fund_rewards` and `sync_rewards` paths.
