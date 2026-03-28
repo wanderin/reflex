@@ -285,3 +285,112 @@ Apply the same fix to `pool.reserved[1]` as recommended in I-08 to make both per
 ### Team Response
 
 **Fix applied:** `fee_config` is now required and `mut` in `FundRewards`. When `protocol_fee > 0`, the handler increments `fee_config.total_fees_collected` alongside `pool.reserved[1]`. Both the per-pool and program-wide lifetime counters are now accurate across both `fund_rewards` and `sync_rewards` paths.
+
+---
+
+## L-06: Pool `fee_exempt` Flag Is Mutable Post-Creation, Enabling Fee Evasion (NM-001)
+
+**Severity:** Low
+**Status:** Identified — Requires Design Decision
+
+### Summary
+
+The `pool._padding` field (which controls fee exemption via `fee_exempt()`) can be toggled by the authority at any time via `set_pool_config()`. While only the authority can call this instruction, the mutability of the fee_exempt flag allows the authority to retroactively change whether protocol fees apply to rewards, creating a timing attack where fees can be avoided on organic rewards by toggling the flag strategically.
+
+### Vulnerability Detail
+
+The `pool._padding` field is initialized at pool creation:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/initialize_pool.rs:229
+
+pool._padding = 0;  // fee_exempt = false by default
+```
+
+The `fee_exempt()` function reads this field:
+
+```rust
+// programs/sol_memecoin_staking/src/state.rs:130
+
+pub fn fee_exempt(&self) -> bool { self._padding == 1 }
+```
+
+Both `fund_rewards` and `sync_rewards` check this flag when calculating protocol fees:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/fund_rewards.rs:72
+// programs/sol_memecoin_staking/src/instructions/sync_rewards.rs:68
+
+let protocol_fee: u64 = if ctx.accounts.fee_config.reward_fee_bps > 0 && !pool.fee_exempt() {
+    // calculate fee...
+} else {
+    0
+};
+```
+
+However, `set_pool_config` allows the authority to change this flag at any time:
+
+```rust
+// programs/sol_memecoin_staking/src/instructions/fee_config.rs:233-236
+
+if let Some(exempt) = fee_exempt {
+    require!(exempt == 0 || exempt == 1, StakingError::InvalidFeeExempt);
+    pool._padding = exempt;
+}
+```
+
+**Attack Sequence:**
+
+1. Pool created with `fee_exempt = false` (default), `reward_fee_bps = 1000` (10%)
+2. Authority calls `fund_rewards(10_000_000)`
+   - `protocol_fee = 1_000_000` (10%) → transferred to treasury ✓
+   - `pool.reserved[1] += 1_000_000`
+3. Authority calls `set_pool_config(fee_exempt = true)`
+   - `pool._padding = 1`
+4. [External event] Organic rewards: 5,000,000 SOL arrives in vault
+5. Anyone calls `sync_rewards()`
+   - Detects `new_rewards = 5_000_000`
+   - Reads `fee_exempt = true` → `protocol_fee = 0` ❌ (should be 500,000)
+   - Distributes full 5,000,000 to stakers
+   - `pool.reserved[1] += 0` (no fee recorded)
+
+**Result:** Authority avoided 500,000 SOL in protocol fees by toggling fee_exempt between fund_rewards and sync_rewards.
+
+### Impact
+
+- **Severity to Protocol:** Low (requires authority compromise or intentional abuse)
+- **Treasury Loss:** Up to ~10% of organic rewards can be diverted by toggling fee_exempt at strategic moments
+- **Accounting Divergence:** `pool.reserved[1]` and `fee_config.total_fees_collected` diverge from expected values
+- **User Impact:** None (users cannot exploit this; only authority can)
+
+### Recommendation
+
+Choose one of the following:
+
+**Option 1 (Recommended):** Make `_padding` immutable after pool creation
+```rust
+// Remove fee_exempt parameter from set_pool_config, or add a guard:
+if let Some(exempt) = fee_exempt {
+    require!(pool.created_at == 0, StakingError::FeatureImmutable); // already initialized
+    require!(exempt == 0 || exempt == 1, StakingError::InvalidFeeExempt);
+    pool._padding = exempt;
+}
+```
+
+**Option 2:** Add governance vote requirement before changing fee_exempt
+- Require a timelock or DAO vote before fee_exempt changes
+- Document the change on-chain with events
+
+**Option 3 (Minimal):** Document as intentional design
+- If fee_exempt mutability is intentional (e.g., for promotional campaigns), document the use case clearly
+- Maintain a clear audit trail of when and why fee_exempt was changed
+- Require explicit multi-sig approval (Squads vault) for changes
+
+---
+
+### Team Response
+
+**Pending.** Design decision needed:
+- Is fee_exempt mutability intentional? If so, document the use case.
+- If not, implement immutability guard (Option 1) to prevent retroactive fee avoidance.
+- Current state: Fee exemption CAN be toggled, which may or may not be intended.
