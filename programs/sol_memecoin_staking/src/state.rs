@@ -41,8 +41,8 @@ pub struct Pool {
     /// PDA bump for the SOL vault
     pub sol_vault_bump: u8,
     
-    /// Reserved byte (was: paused flag, removed for trustlessness)
-    pub _padding: u8,
+    /// Whether this pool is exempt from protocol fees (0=fees on, 1=exempt)
+    pub fee_exempt: u8,
     
     /// Total weighted shares in the pool (sum of all lot shares)
     /// Shares = amount * tier_multiplier / 10000 (linear scaling)
@@ -86,7 +86,7 @@ pub struct Pool {
 impl Pool {
     /// Space needed for the Pool account
     /// 8 (discriminator) + 32 (mint) + 32 (token_program) + 1 (bump) + 1 (tv_bump) + 1 (sv_bump)
-    /// + 1 (_padding) + 16 (total_shares) + 16 (acc_sol_per_share) + 8 (funded) + 8 (claimed)
+    /// + 1 (fee_exempt) + 16 (total_shares) + 16 (acc_sol_per_share) + 8 (funded) + 8 (claimed)
     /// + 8 (unallocated) + 48 (multipliers) + 8 (active_lots) + 8 (total_staked) + 8 (created_at)
     /// + 32 (creator_wallet) + 32 (reserved)
     pub const LEN: usize = 8 + 32 + 32 + 1 + 1 + 1 + 1 + 16 + 16 + 8 + 8 + 8 + (6 * 8) + 8 + 8 + 8 + 32 + (4 * 8);
@@ -126,8 +126,8 @@ impl Pool {
     /// safely disables Custom tier (0 shares → ZeroShares rejection).
     pub fn custom_multiplier_bps(&self) -> u64 { self.reserved[2] }
 
-    /// Whether this pool is exempt from protocol fees (_padding: 0=fees on, 1=exempt)
-    pub fn fee_exempt(&self) -> bool { self._padding == 1 }
+    /// Whether this pool is exempt from protocol fees (0=fees on, 1=exempt)
+    pub fn fee_exempt(&self) -> bool { self.fee_exempt == 1 }
 }
 
 /// Individual stake lot - tracks one stake position per user

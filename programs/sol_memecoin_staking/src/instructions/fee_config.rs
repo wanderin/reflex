@@ -183,10 +183,21 @@ pub fn handler_update_fee_config(
     Ok(())
 }
 
-// ── SetPoolConfig ────────────────────────────────────────────────────────────
+// ── UpdatePoolConfig ─────────────────────────────────────────────────────────
+//
+// Admin instruction to modify per-pool parameters after initialization.
+// Requires config.authority or the program upgrade authority.
+//
+// Use cases:
+//   - Enable/disable protocol fee exemption for a specific pool
+//   - Set the Custom tier multiplier (reserved[2]) to enable Custom staking
+//   - Update tier_multipliers to disable old tiers or adjust Permanent multiplier
+//
+// Safety: changes only affect NEW stakes. Existing lots retain their stored
+// shares, amount, tier, and unlock_at — claim and unstake are unaffected.
 
 #[derive(Accounts)]
-pub struct SetPoolConfig<'info> {
+pub struct UpdatePoolConfig<'info> {
     pub authority: Signer<'info>,
 
     #[account(
@@ -216,10 +227,11 @@ pub struct SetPoolConfig<'info> {
     pub program_data: UncheckedAccount<'info>,
 }
 
-pub fn handler_set_pool_config(
-    ctx: Context<SetPoolConfig>,
+pub fn handler_update_pool_config(
+    ctx: Context<UpdatePoolConfig>,
     fee_exempt: Option<u8>,
     custom_multiplier_bps: Option<u64>,
+    tier_multipliers: Option<[u64; 6]>,
 ) -> Result<()> {
     require_authority_or_upgrade(
         &ctx.accounts.authority.key(),
@@ -232,11 +244,11 @@ pub fn handler_set_pool_config(
 
     if let Some(exempt) = fee_exempt {
         require!(exempt == 0 || exempt == 1, StakingError::InvalidFeeExempt);
-        pool._padding = exempt;
+        pool.fee_exempt = exempt;
     }
 
     if let Some(mult) = custom_multiplier_bps {
-        // Validate: 0 to disable, or >= 10000 (at least 1.0x) and <= 100000 (max 10x)
+        // 0 to disable Custom tier, or 10000-100000 bps (1x-10x)
         require!(
             mult == 0 || (mult >= 10_000 && mult <= 100_000),
             StakingError::InvalidMultipliers
@@ -244,17 +256,29 @@ pub fn handler_set_pool_config(
         pool.reserved[2] = mult;
     }
 
+    if let Some(multipliers) = tier_multipliers {
+        // Each value: 0 (disabled) or 10000-100000 bps (1x-10x)
+        for mult in multipliers.iter() {
+            require!(
+                *mult == 0 || (*mult >= 10_000 && *mult <= 100_000),
+                StakingError::InvalidMultipliers
+            );
+        }
+        pool.tier_multipliers = multipliers;
+    }
+
     emit!(PoolConfigUpdated {
         pool: pool.key(),
-        fee_exempt: pool._padding,
+        fee_exempt: pool.fee_exempt,
         custom_multiplier_bps: pool.reserved[2],
         timestamp: clock.unix_timestamp,
     });
 
     msg!(
-        "Pool config updated: fee_exempt={}, custom_multiplier_bps={}",
-        pool._padding,
-        pool.reserved[2]
+        "Pool config updated: fee_exempt={}, custom_multiplier_bps={}, tier_multipliers={:?}",
+        pool.fee_exempt,
+        pool.reserved[2],
+        pool.tier_multipliers
     );
     Ok(())
 }

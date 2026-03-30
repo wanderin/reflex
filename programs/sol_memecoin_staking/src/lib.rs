@@ -270,14 +270,18 @@ pub mod sol_memecoin_staking {
         instructions::fee_config::handler_update_fee_config(ctx, treasury, reward_fee_bps)
     }
 
-    /// Update per-pool config: fee exemption and/or custom multiplier.
-    /// Authority-only.
-    pub fn set_pool_config(
-        ctx: Context<SetPoolConfig>,
+    /// Update per-pool configuration. Authority-only.
+    ///
+    /// Modifies fee exemption, Custom tier multiplier, and/or tier multipliers
+    /// for an existing pool. Changes only affect new stakes — existing lots
+    /// retain their stored shares and are unaffected.
+    pub fn update_pool_config(
+        ctx: Context<UpdatePoolConfig>,
         fee_exempt: Option<u8>,
         custom_multiplier_bps: Option<u64>,
+        tier_multipliers: Option<[u64; 6]>,
     ) -> Result<()> {
-        instructions::fee_config::handler_set_pool_config(ctx, fee_exempt, custom_multiplier_bps)
+        instructions::fee_config::handler_update_pool_config(ctx, fee_exempt, custom_multiplier_bps, tier_multipliers)
     }
 
     /// Collect pending protocol fees from a pool to the treasury.

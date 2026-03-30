@@ -160,10 +160,12 @@ pub fn handler_initialize_pool(
         None => DEFAULT_TIER_MULTIPLIERS,
     };
 
-    // Validate multipliers - all must be >= 10000 (at least 1x) and <= 100000 (max 10x)
-    for mult in multipliers.iter() {
-        require!(*mult >= 10_000 && *mult <= MAX_TIER_MULTIPLIER, StakingError::InvalidMultipliers);
-    }
+    // Only validate Permanent tier (index 5) — tiers 0-4 are zeroed below anyway.
+    // Permanent multiplier must be >= 10000 (1x) and <= 100000 (10x).
+    require!(
+        multipliers[5] >= 10_000 && multipliers[5] <= MAX_TIER_MULTIPLIER,
+        StakingError::InvalidMultipliers
+    );
 
     // Store bumps before creating sol_vault (pool will be borrowed)
     let pool_bump = ctx.bumps.pool;
@@ -226,7 +228,7 @@ pub fn handler_initialize_pool(
     pool.bump = pool_bump;
     pool.token_vault_bump = token_vault_bump;
     pool.sol_vault_bump = sol_vault_bump;
-    pool._padding = 0;
+    pool.fee_exempt = 0;
     pool.total_shares = 0;
     pool.acc_sol_per_share = 0;
     pool.total_rewards_funded = 0;
