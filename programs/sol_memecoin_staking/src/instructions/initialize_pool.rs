@@ -160,12 +160,13 @@ pub fn handler_initialize_pool(
         None => DEFAULT_TIER_MULTIPLIERS,
     };
 
-    // Only validate Permanent tier (index 5) — tiers 0-4 are zeroed below anyway.
-    // Permanent multiplier must be >= 10000 (1x) and <= 100000 (10x).
-    require!(
-        multipliers[5] >= 10_000 && multipliers[5] <= MAX_TIER_MULTIPLIER,
-        StakingError::InvalidMultipliers
-    );
+    // Validate all 6 fixed-tier multipliers: each must be >= 10000 (1x) and <= 100000 (10x).
+    for mult in multipliers.iter() {
+        require!(
+            *mult >= 10_000 && *mult <= MAX_TIER_MULTIPLIER,
+            StakingError::InvalidMultipliers
+        );
+    }
 
     // Store bumps before creating sol_vault (pool will be borrowed)
     let pool_bump = ctx.bumps.pool;
@@ -240,15 +241,9 @@ pub fn handler_initialize_pool(
     pool.created_at = clock.unix_timestamp;
     pool.creator_wallet = creator_wallet;
 
-    // New pools: disable fixed tiers (0-4), keep Permanent (5), enable Custom via reserved[2].
-    // Disabled tiers get 0 multiplier → 0 shares → ZeroShares rejection on stake.
-    // Existing pools are unaffected (they keep their original multipliers).
-    pool.tier_multipliers[0] = 0; // Flexible: disabled
-    pool.tier_multipliers[1] = 0; // 24h: disabled
-    pool.tier_multipliers[2] = 0; // 72h: disabled
-    pool.tier_multipliers[3] = 0; // 1week: disabled
-    pool.tier_multipliers[4] = 0; // 1month: disabled
-    // tier_multipliers[5] (Permanent) keeps value from multipliers array above
+    // New pools: keep all fixed tiers (0-5) AND enable Custom (6) via reserved[2].
+    // tier_multipliers already contains all 6 fixed-tier values from `multipliers` above.
+    // Admin can later disable specific tiers per-pool via update_pool_config.
 
     // reserved[0]=pending_fees, [1]=total_fees, [2]=custom_multiplier_bps, [3]=free
     pool.reserved = [0, 0, DEFAULT_CUSTOM_MULTIPLIER_BPS, 0];
